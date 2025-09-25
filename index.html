@@ -3,18 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Live Mic Spectrogram</title>
+    <title>Mic Spectrogram — Up to 4 Channels</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
     <div class="wrap">
       <header>
-        <h1>Live Mic Spectrogram</h1>
+        <h1>Mic Spectrogram</h1>
         <div class="controls">
-          <button id="start" class="primary">Start</button>
-          <button id="stop" disabled>Stop</button>
+          <button id="toggle" class="primary">Play</button>
+          <button id="rec" class="danger" disabled>● Rec</button>
+          <button id="save" disabled>Save WAVs</button>
           <label>Mic:
             <select id="deviceSelect"></select>
+          </label>
+          <label>Channels:
+            <select id="channels">
+              <option value="1">1</option>
+              <option value="2" selected>2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
           </label>
           <label>FFT:
             <select id="fft">
@@ -30,7 +39,12 @@
 
       <section class="panes">
         <div id="waveform" class="card"></div>
-        <div id="spectrogram" class="card"></div>
+        <div id="spectrograms" class="grid4">
+          <div class="spec card"><canvas></canvas><span>CH 1</span><i class="lvl"></i></div>
+          <div class="spec card"><canvas></canvas><span>CH 2</span><i class="lvl"></i></div>
+          <div class="spec card"><canvas></canvas><span>CH 3</span><i class="lvl"></i></div>
+          <div class="spec card"><canvas></canvas><span>CH 4</span><i class="lvl"></i></div>
+        </div>
       </section>
 
       <footer>
