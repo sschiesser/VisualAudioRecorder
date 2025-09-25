@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Mic Spectrogram</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Live Mic Spectrogram</h1>
+        <div class="controls">
+          <button id="start" class="primary">Start</button>
+          <button id="stop" disabled>Stop</button>
+          <label>Mic:
+            <select id="deviceSelect"></select>
+          </label>
+          <label>FFT:
+            <select id="fft">
+              <option>512</option>
+              <option selected>1024</option>
+              <option>2048</option>
+              <option>4096</option>
+              <option>8192</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <section class="panes">
+        <div id="waveform" class="card"></div>
+        <div id="spectrogram" class="card"></div>
+      </section>
+
+      <footer>
+        <small id="info">—</small>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "pwa-chrome",
+      "request": "launch",
+      "name": "Vite: Launch Chrome",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "smartStep": true,
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**"
+      ]
+    },
+    {
+      "type": "pwa-msedge",
+      "request": "launch",
+      "name": "Vite: Launch Edge",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "smartStep": true,
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**"
+      ]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Start Vite & Debug (Chrome)",
+      "configurations": [
+        "Vite: Launch Chrome"
+      ],
+      "preLaunchTask": "vite dev (bg)"
+    },
+    {
+      "name": "Start Vite & Debug (Edge)",
+      "configurations": [
+        "Vite: Launch Edge"
+      ],
+      "preLaunchTask": "vite dev (bg)"
+    }
+  ]
+}
