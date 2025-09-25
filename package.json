@@ -1,6 +1,6 @@
 {
-  "name": "mic-spectrogram-multichannel",
-  "version": "2.1.0",
+  "name": "mic-spectrogram-multichannel-modular",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "scripts": {

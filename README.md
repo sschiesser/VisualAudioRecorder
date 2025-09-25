@@ -1,18 +1,30 @@
-# Mic Spectrogram — Up to 4 Channels (Robust fix)
+# Mic Spectrogram (Modular, 1–4 channels)
 
-This build fixes:
-- **Device list**: correct template literals (no escaping), and repopulates labels *after* mic permission.
-- **Black spectrogram**: set state before loops, keep `requestAnimationFrame` alive, ensure non‑zero canvas sizes, and `AudioContext.resume()` on Play.
+Refactor of the multichannel app into small ES modules:
 
-Features:
-- One **Play/Pause** button
-- **Mic**, **Channels (1–4)**, **FFT** controls
-- Up to **4 per‑channel spectrograms** + simple level meters
-- Optional per‑channel recording via `AudioWorklet`
+```
+src/
+  index.js
+  lib/
+    app.js                # orchestrates UI + modules
+    state.js              # simple state
+    deviceManager.js      # device enumeration/sorting
+    audioGraph.js         # getUserMedia + AudioContext graph helpers
+    waveform.js           # wavesurfer + record plugin hookup
+    spectrogramGrid.js    # canvas grid + draw loops + meters
+    recorder.js           # AudioWorklet capture + WAV saving
+    recorder-worklet.js   # worklet processor (copied by Vite)
+    utils/
+      color.js            # color mapping
+      wav.js              # WAV encoder
+```
 
 ## Run
 ```bash
 npm install
 npm run dev
 ```
-Open the URL, click **Play** (grant mic), then adjust mic/channels/FFT.
+Open http://localhost:5173, choose devices/channels/FFT, and hit **Play**.
+
+- **Play/Pause** toggles monitoring
+- **● Rec** begins per-channel capture (if AudioWorklet supported); **Save WAVs** downloads 1 WAV per channel.

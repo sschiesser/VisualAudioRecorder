@@ -10,7 +10,7 @@ class MultichannelRecorder extends AudioWorkletProcessor {
     if (chCount === 0) return true
     const buffers = []
     for (let ch=0; ch<chCount; ch++) {
-      buffers.push(new Float32Array(inputs[0][ch])) // copy 128-frame block
+      buffers.push(new Float32Array(input[ch]))
     }
     this.port.postMessage({ type: 'chunk', buffers })
     return true
