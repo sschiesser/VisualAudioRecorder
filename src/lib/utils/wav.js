@@ -1,5 +1,7 @@
-/*
- * Copyright (C) 2025 sschiesser
+/**
+ * @file src/lib/utils/wav.js
+ * @copyright Copyright (C) 2025 sschiesser
+ * @license GPL-3.0-only
  * SPDX-License-Identifier: GPL-3.0-only
  */
 function floatTo16BitPCM(float32) {
