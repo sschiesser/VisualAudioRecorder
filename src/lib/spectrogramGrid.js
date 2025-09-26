@@ -8,13 +8,16 @@
 import { hueHeat } from './utils/color.js'
 import { isPlaying } from './state.js'
 
-// Fixed visible window in seconds
+// Fixed time window in seconds (full canvas width)
 const WINDOW_SECONDS = 120
+// Portion of each channel canvas reserved for waveform (rest is spectrogram)
+const WAVE_RATIO = 0.25  // 25% height waveform, 75% spectrogram
 
 let canvases = [], ctxs = [], meters = [], ro = null, loops = []
 let analyzersRef = []
 let freqData = [], timeData = []
 let lastTs = [], pxPerSec = [], accumPx = []
+let lastW = [], lastH = []
 
 export function setupGrid(containerSelector = '#spectrograms', chCount = 2) {
   const holders = Array.from(document.querySelectorAll(containerSelector + ' .spec'))
@@ -39,14 +42,13 @@ export function setupGrid(containerSelector = '#spectrograms', chCount = 2) {
     }
   })
 
-  // Prepare timing & buffers per channel
-  const ch = chCount
-  analyzersRef = new Array(ch)
-  freqData = new Array(ch)
-  timeData = new Array(ch)
-  lastTs = new Array(ch).fill(0)
-  pxPerSec = new Array(ch).fill(0)
-  accumPx = new Array(ch).fill(0)
+  // Prepare arrays per visible channel
+  analyzersRef = new Array(chCount)
+  freqData = new Array(chCount)
+  timeData = new Array(chCount)
+  lastTs = new Array(chCount).fill(0)
+  pxPerSec = new Array(chCount).fill(0)
+  accumPx = new Array(chCount).fill(0)
 
   // Keep drawings on resize and recompute pixels-per-second
   if (ro) ro.disconnect()
@@ -60,12 +62,16 @@ export function setupGrid(containerSelector = '#spectrograms', chCount = 2) {
       const h = holder.clientHeight || 150
       canvas.width = w
       canvas.height = h
+      // shift old to the left if the new canvas is wider
       ctx.putImageData(old, Math.max(0, w - old.width), Math.max(0, h - old.height))
-      // Recompute pixels per second for the fixed 120s window
       pxPerSec[i] = w / WINDOW_SECONDS
     })
   })
   canvases.forEach((c) => c && ro.observe(c.parentElement))
+
+  pxPerSec = canvases.map(c => (c?.width || 300) / WINDOW_SECONDS)
+  lastW    = canvases.map(c => c?.width  || 0)
+  lastH    = canvases.map(c => c?.height || 0)
 }
 
 export function start(analyzers) {
@@ -89,52 +95,76 @@ export function start(analyzers) {
     const draw = (ts) => {
       loops[i] = requestAnimationFrame(draw)
       const w = canvas.width, h = canvas.height
+      if(!w || !h) {
+        lastTs[i] = ts || performance.now()
+        return
+      }
+      if (w !== lastW[i]) {
+        pxPerSec[i] = w / WINDOW_SECONDS
+        lastW[i] = w
+      }
+      lastH[i] = h
+      const hWave = Math.max(30, Math.round(h * WAVE_RATIO))     // waveform area height
+      const hSpec = Math.max(1, h - hWave)                        // spectrogram area height
 
-      // Keep the loop alive even if paused
       if (!isPlaying()) {
         lastTs[i] = ts || performance.now()
         return
       }
 
-      // How many pixels should we advance since last frame?
+      // advance time in pixels so width == WINDOW_SECONDS
       const now = ts || performance.now()
-      const dt = Math.max(0, (now - lastTs[i]) / 1000)  // seconds
+      const dt = Math.max(0, (now - lastTs[i]) / 1000)
       lastTs[i] = now
       accumPx[i] += dt * pxPerSec[i]
-      let steps = accumPx[i] | 0 // integer pixels to advance
-      if (steps <= 0) steps = 0
+      let steps = accumPx[i] | 0
       if (steps > w) steps = w
-      accumPx[i] -= steps
+      if (steps > 0) accumPx[i] -= steps
 
-      // Only redraw if at least 1px of time has elapsed
+      // Pull data once per frame
+      an.getByteFrequencyData(freqData[i])
+      an.getByteTimeDomainData(timeData[i])
+
       if (steps > 0) {
-        // Pull the latest spectrum once per frame
-        an.getByteFrequencyData(freqData[i])
-
-        // Shift image left by 'steps' pixels
+        // Shift entire canvas left by 'steps' pixels
         if (steps < w) {
           const img = ctx.getImageData(steps, 0, w - steps, h)
           ctx.putImageData(img, 0, 0)
         } else {
-          // full clear if we advanced >= width
           ctx.fillStyle = '#0a0f16'
           ctx.fillRect(0, 0, w, h)
         }
 
-        // Draw 'steps' time columns on the right edge
+        // Draw 'steps' new columns on the right
         for (let s = steps; s > 0; s--) {
           const x = w - s
-          for (let y = 0; y < h; y++) {
-            const bin = Math.floor((y / h) * freqData[i].length)
+
+          // --- Waveform column (top area) ---
+          // Map one sample (centered) to a y position
+          const t = timeData[i]
+          // pick a representative sample (middle)
+          const val = (t[(t.length / 2) | 0] - 128) / 128
+          const mid = (hWave / 2) | 0
+          const amp = Math.max(-1, Math.min(1, val))
+          const y = mid - Math.round(amp * (hWave / 2 - 1))
+
+          // Clear column area then draw a 2px-high line for visibility
+          ctx.fillStyle = '#0a0f16'
+          ctx.fillRect(x, 0, 1, hWave)
+          ctx.fillStyle = '#7cc5ff'
+          ctx.fillRect(x, Math.max(0, y - 1), 1, 2)
+
+          // --- Spectrogram column (bottom area) ---
+          for (let yy = 0; yy < hSpec; yy++) {
+            const bin = Math.floor((yy / hSpec) * freqData[i].length)
             const v = freqData[i][bin]
             ctx.fillStyle = hueHeat(v)
-            ctx.fillRect(x, h - 1 - y, 1, 1)
+            ctx.fillRect(x, h - 1 - yy, 1, 1)
           }
         }
       }
 
-      // Simple level meter (RMS-ish)
-      an.getByteTimeDomainData(timeData[i])
+      // Simple level meter (RMS-ish), independent of steps
       let acc = 0
       for (let k = 0; k < timeData[i].length; k++) {
         const s = (timeData[i][k] - 128) / 128
@@ -142,10 +172,9 @@ export function start(analyzers) {
       }
       const rms = Math.sqrt(acc / timeData[i].length)
       const pct = Math.max(0, Math.min(1, rms * 3)) * 100
-      if (lvl) {
-        lvl.style.background = `linear-gradient(to right, #36d67e ${pct}%, transparent ${pct}%)`
-      }
+      if (lvl) lvl.style.background = `linear-gradient(to right, #36d67e ${pct}%, transparent ${pct}%)`
     }
+
     loops[i] = requestAnimationFrame(draw)
   }
 }

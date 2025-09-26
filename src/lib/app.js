@@ -6,26 +6,33 @@
  * SPDX-License-Identifier: GPL-3.0-only
  */
 
+
 import { state, setMode } from './state.js'
 import { listDevices } from './deviceManager.js'
 import { ensureStream, createContext, buildGraph, createAnalyzers } from './audioGraph.js'
 import * as Spectro from './spectrogramGrid.js'
 import * as Rec from './recorder.js'
 
-// Play/Pause now:
-// - Captures mic into a 120s circular buffer (per channel, up to 4)
-// - Renders live spectrograms (visual only; no audio “monitoring”/playback)
+// Play/Pause:
+// - Buffers last 120s per channel (no audio monitoring).
+// - Renders per-channel waveform + spectrograms live.
+// - Number of channel panes == channel selector (1–4).
 
 export function initApp() {
   const els = {
     toggle: document.getElementById('toggle'),
-    rec: document.getElementById('rec'),   // remains disabled in buffer mode
+    rec: document.getElementById('rec'),   // disabled in buffer mode
     save: document.getElementById('save'),
     deviceSelect: document.getElementById('deviceSelect'),
     channels: document.getElementById('channels'),
     fft: document.getElementById('fft'),
     info: document.getElementById('info'),
   }
+
+  // Initialize the grid to match the current channel selector (before Play)
+  const initialCh = Math.min(4, parseInt(document.getElementById('channels').value, 10) || 2)
+  Spectro.setupGrid('#spectrograms', initialCh)
+
 
   let stream = null
   let audioCtx = null
@@ -36,7 +43,6 @@ export function initApp() {
   const setInfo   = (t) => (els.info.textContent = t)
   const setButton = (t) => (els.toggle.textContent = t)
 
-  // Recording button not used in this mode
   els.rec.disabled = true
   els.rec.title = 'Disabled: Play buffers last 120s automatically'
 
@@ -46,7 +52,7 @@ export function initApp() {
     .catch(() => {})
 
   async function play() {
-    // Refresh devices; read channels
+    // Refresh devices; read channels (we will SHOW exactly this many panes)
     state.currentDeviceId = await listDevices(els.deviceSelect, state.currentDeviceId)
       .catch(() => els.deviceSelect.value || state.currentDeviceId)
     state.desiredChannels = parseInt(els.channels.value, 10) || 2
@@ -62,23 +68,31 @@ export function initApp() {
     source = graph.source
     splitter = graph.splitter
 
-    // Channels available (cap to 4)
-    const actual = source.channelCount || state.desiredChannels
-    const chCount = Math.min(4, Math.max(1, Math.min(actual, state.desiredChannels)))
+    // *** Pane count = selection (capped to 4) ***
+    const chCount = Math.min(4, state.desiredChannels)
 
     // Spectrogram grid + analyzers
     Spectro.setupGrid('#spectrograms', chCount)
     setMode('playing')
     setButton('Pause')
-    analyzers = createAnalyzers(audioCtx, splitter, parseInt(els.fft.value, 10) || 1024, chCount)
-    Spectro.start(analyzers)
+    analyzers = createAnalyzers(
+      audioCtx,
+      splitter,
+      parseInt(els.fft.value, 10) || 1024,
+      chCount
+    )
+
+    requestAnimationFrame(() => {
+      Spectro.start(analyzers)
+    }); // ensure UI updates before heavy start
+    
 
     // Start 120s circular buffering (no audio output/monitoring)
     const ok = await Rec.setupBuffering(audioCtx, source, chCount, 120)
     els.save.disabled = !ok
 
     setInfo(
-      `${stream.getAudioTracks()[0]?.label || 'Mic'} • buffering last 120s • ${chCount} ch @ ${audioCtx.sampleRate | 0} Hz`
+      `${stream.getAudioTracks?.()[0]?.label || 'Mic'} • buffering 120s • ${chCount} ch @ ${audioCtx.sampleRate | 0} Hz`
     )
 
     // Repopulate device labels after permission
@@ -89,14 +103,14 @@ export function initApp() {
     setMode('paused')
     if (audioCtx) { try { audioCtx.suspend() } catch {} }
     setButton('Play')
-    setInfo('Paused (buffer + spectrogram paused)')
+    setInfo('Paused (buffer + visuals paused)')
   }
 
   async function resume() {
     if (audioCtx?.state === 'suspended') { await audioCtx.resume().catch(() => {}) }
     setMode('playing')
     setButton('Pause')
-    setInfo('Buffering + spectrogram resumed')
+    setInfo('Buffering + visuals resumed')
   }
 
   function stopAll() {
@@ -114,7 +128,7 @@ export function initApp() {
 
   els.save.addEventListener('click', () => {
     Rec.saveAllBuffered(audioCtx?.sampleRate || 48000)
-    setInfo('Saved last 120s from each available channel.')
+    setInfo('Saved last 120s from each visible channel.')
   })
 
   els.deviceSelect.addEventListener('change', async (e) => {
@@ -123,12 +137,18 @@ export function initApp() {
     pause(); stopAll(); await play()
   })
 
-  els.channels.addEventListener('change', async (e) => {
-    state.desiredChannels = parseInt(e.target.value, 10) || 2
-    if (state.mode === 'playing') { pause(); stopAll(); await play() }
-  })
+els.channels.addEventListener('change', async (e) => {
+  state.desiredChannels = parseInt(e.target.value, 10) || 2
+  if (state.mode === 'playing') {
+    pause(); stopAll(); await play()
+  } else {
+    // Reflect selection immediately when not playing
+    Spectro.setupGrid('#spectrograms', Math.min(4, state.desiredChannels))
+  }
+})
 
-  // FFT now affects the live spectrogram again (buffering unaffected)
+
+  // FFT affects visuals only (buffering unaffected)
   els.fft.addEventListener('change', () => {
     if (state.mode === 'playing') {
       analyzers = createAnalyzers(audioCtx, splitter, parseInt(els.fft.value, 10) || 1024, analyzers.length)
