@@ -1,23 +1,168 @@
-:root{
-  --bg:#0b0f14; --fg:#e6f0ff; --muted:#8aa0b4; --card:#121821; --accent:#7cc5ff; --danger:#ff5161;
+/*
+  Styles for VisualAudioRecorder
+  - Clean, readable layout for controls, waveform, and spectrograms
+  - Preserves existing selectors used by the app
+*/
+
+:root {
+  --bg: #0b0f14;
+  --card: #121821;
+  --panel-border: #1e2733;
+  --fg: #e6f0ff;
+  --muted: #8aa0b4;
+  --accent: #7cc5ff;
+  --danger: #ff5161;
+  --control-bg: #1c2430;
+  --control-radius: 10px;
+  --gap: 12px;
 }
-*{box-sizing:border-box}
-html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Arial}
-.wrap{display:grid;grid-template-rows:auto 1fr auto;gap:12px;height:100%;padding:14px}
-header{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-button{border:0;border-radius:12px;padding:8px 12px;background:#1c2430;color:var(--fg);cursor:pointer}
-button.primary{background:linear-gradient(180deg,#1f364d,#152334);border:1px solid #2b425a}
-button.danger{background:#2a1115;border:1px solid #3a1a20;color:var(--danger)}
-button:disabled{opacity:.6;cursor:not-allowed}
-label{display:flex;gap:6px;align-items:center}
-select{background:#0c141e;color:var(--fg);border:1px solid #22303f;border-radius:8px;padding:6px}
-.panes{display:grid;grid-template-rows:120px 1fr;gap:12px;min-height:0}
-.card{background:var(--card);border:1px solid #1e2733;border-radius:12px;min-height:120px;overflow:hidden;position:relative}
-#waveform{height:120px}
-.grid4{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);gap:12px;min-height:0}
-.spec{position:relative;min-height:0}
-.spec canvas{display:block;width:100%;height:100%}
-.spec span{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.35);padding:2px 6px;border-radius:8px;font-size:12px}
-.spec .lvl{position:absolute;right:8px;top:8px;width:60px;height:6px;background:#071019;border:1px solid #132030;border-radius:999px;overflow:hidden}
-footer{color:var(--muted)}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+/* Page layout */
+.wrap {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--gap);
+  height: 100%;
+  padding: 14px;
+}
+
+header {
+  display: flex;
+  gap: var(--gap);
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Buttons & form controls */
+button {
+  border: 0;
+  border-radius: 12px;
+  padding: 8px 12px;
+  background: var(--control-bg);
+  color: var(--fg);
+  cursor: pointer;
+  transition: transform .08s ease, opacity .12s ease;
+}
+
+button:active { transform: translateY(1px); }
+button:focus { outline: 2px solid rgba(124,197,255,0.25); }
+
+button.primary {
+  background: linear-gradient(180deg, #1f364d, #152334);
+  border: 1px solid #2b425a;
+}
+
+button.danger {
+  background: #2a1115;
+  border: 1px solid #3a1a20;
+  color: var(--danger);
+}
+
+button:disabled { opacity: .6; cursor: not-allowed; }
+
+label { display: flex; gap: 6px; align-items: center; }
+
+select {
+  background: #0c141e;
+  color: var(--fg);
+  border: 1px solid #22303f;
+  border-radius: 8px;
+  padding: 6px;
+}
+
+/* Two-pane layout: waveform (fixed height) + main panes */
+.panes {
+  display: grid;
+  grid-template-rows: 120px 1fr;
+  gap: 12px;
+  min-height: 0; /* allow children to shrink inside flex/grid containers */
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  min-height: 120px;
+  overflow: hidden;
+  position: relative;
+  padding: 10px;
+}
+
+/* Waveform container (WaveSurfer attaches here) */
+#waveform { height: 120px; }
+
+/* Spectrogram grid: stacked columns for channels */
+.grid4 {
+  display: flex;
+  flex-direction: column; /* stack channels vertically */
+  gap: 12px;
+  min-height: 0;
+}
+
+.spec {
+  position: relative;
+  min-height: 0; /* allow flex children to shrink properly */
+  flex: 1 1 0; /* each visible channel takes equal height */
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.spec canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.spec span {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  background: rgba(0,0,0,0.35);
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.spec .lvl {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  width: 60px;
+  height: 6px;
+  background: #071019;
+  border: 1px solid #132030;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+footer { color: var(--muted); text-align: center; padding: 6px 0; }
+
+/* Responsive tweaks */
+@media (max-width: 640px) {
+  .panes { grid-template-rows: 100px 1fr; }
+  #waveform { height: 100px; }
+  .spec span { font-size: 11px; }
+}
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+}
