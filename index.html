@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mic Spectrogram — Modular (1–4 channels)</title>
+    <title>Mic Spectrogram — Interactive</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
@@ -12,7 +12,6 @@
         <h1>Mic Spectrogram</h1>
         <div class="controls">
           <button id="toggle" class="primary">Play</button>
-          <button id="rec" class="danger" disabled>● Rec</button>
           <button id="save" disabled>Save WAVs</button>
           <label>Mic:
             <select id="deviceSelect"></select>
@@ -39,14 +38,13 @@
               <option value="30">30</option>
               <option value="60">60</option>
               <option value="120" selected>120</option>
-              <option value="300">300</option>
+              <option value="300">300 (5m)</option>
             </select>
           </label>
         </div>
       </header>
 
       <section class="panes">
-        <div id="waveform" class="card" style="display:none"></div>
         <div id="spectrograms" class="grid4">
           <div class="spec card"><canvas></canvas><span>CH 1</span><i class="lvl"></i></div>
           <div class="spec card"><canvas></canvas><span>CH 2</span><i class="lvl"></i></div>
