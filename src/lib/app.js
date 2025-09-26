@@ -6,18 +6,20 @@
  * SPDX-License-Identifier: GPL-3.0-only
  */
 
-import { state, setMode, isPlaying } from './state.js'
+import { state, setMode } from './state.js'
 import { listDevices } from './deviceManager.js'
 import { ensureStream, createContext, buildGraph, createAnalyzers } from './audioGraph.js'
-import { setupWaveform, attachStream, detach, destroy as destroyWaveform } from './waveform.js'
 import * as Spectro from './spectrogramGrid.js'
 import * as Rec from './recorder.js'
 
-// ================================================================================
+// Play/Pause now:
+// - Captures mic into a 120s circular buffer (per channel, up to 4)
+// - Renders live spectrograms (visual only; no audio “monitoring”/playback)
+
 export function initApp() {
   const els = {
     toggle: document.getElementById('toggle'),
-    rec: document.getElementById('rec'),
+    rec: document.getElementById('rec'),   // remains disabled in buffer mode
     save: document.getElementById('save'),
     deviceSelect: document.getElementById('deviceSelect'),
     channels: document.getElementById('channels'),
@@ -31,127 +33,108 @@ export function initApp() {
   let splitter = null
   let analyzers = []
 
-  const setInfo = (t) => els.info.textContent = t
-  const setButton = (t) => els.toggle.textContent = t
-  const enableRec = (on) => { els.rec.disabled = !on; els.save.disabled = !on && !Rec.__maybe_has_chunks }
+  const setInfo   = (t) => (els.info.textContent = t)
+  const setButton = (t) => (els.toggle.textContent = t)
 
-  // Initial devices (labels improve after permission)
-  listDevices(els.deviceSelect, state.currentDeviceId).then(id => state.currentDeviceId = id).catch(()=>{})
+  // Recording button not used in this mode
+  els.rec.disabled = true
+  els.rec.title = 'Disabled: Play buffers last 120s automatically'
 
-/*================================================================================
-  Initializes (or resumes) the microphone stream and AudioContext, 
-  builds the audio graph, starts waveform/spectrogram analyzers,
-  and enables recording/UI.
-  ================================================================================
-*/
+  // Initial device list (labels improve after mic permission)
+  listDevices(els.deviceSelect, state.currentDeviceId)
+    .then((id) => (state.currentDeviceId = id))
+    .catch(() => {})
+
   async function play() {
-    // Device list (may gain labels now)
-    state.currentDeviceId = await listDevices(els.deviceSelect, state.currentDeviceId).catch(()=>els.deviceSelect.value || state.currentDeviceId)
-    state.desiredChannels = parseInt(els.channels.value,10) || 2
+    // Refresh devices; read channels
+    state.currentDeviceId = await listDevices(els.deviceSelect, state.currentDeviceId)
+      .catch(() => els.deviceSelect.value || state.currentDeviceId)
+    state.desiredChannels = parseInt(els.channels.value, 10) || 2
 
-    stream = stream || await ensureStream(state.currentDeviceId, state.desiredChannels)
-    if (audioCtx) try { audioCtx.close() } catch {}
+    // Stream + AudioContext
+    stream = stream || (await ensureStream(state.currentDeviceId, state.desiredChannels))
+    if (audioCtx) { try { audioCtx.close() } catch {} }
     audioCtx = createContext()
     if (audioCtx.state === 'suspended') { try { await audioCtx.resume() } catch {} }
 
+    // Build graph
     const graph = buildGraph(audioCtx, stream)
-    source = graph.source; splitter = graph.splitter
+    source = graph.source
+    splitter = graph.splitter
 
-    // Waveform view
-    setupWaveform('#waveform')
-    attachStream(stream)
-
-    // Channel count and spectro
+    // Channels available (cap to 4)
     const actual = source.channelCount || state.desiredChannels
     const chCount = Math.min(4, Math.max(1, Math.min(actual, state.desiredChannels)))
-    Spectro.setupGrid('#spectrograms', chCount)
 
-    // Mark playing before loops
+    // Spectrogram grid + analyzers
+    Spectro.setupGrid('#spectrograms', chCount)
     setMode('playing')
     setButton('Pause')
-
-    analyzers = createAnalyzers(audioCtx, splitter, parseInt(els.fft.value,10)||1024, chCount)
+    analyzers = createAnalyzers(audioCtx, splitter, parseInt(els.fft.value, 10) || 1024, chCount)
     Spectro.start(analyzers)
 
-    setInfo(`${stream.getAudioTracks()[0]?.label || 'Mic'} • ${chCount} ch @ ${audioCtx.sampleRate|0} Hz`)
+    // Start 120s circular buffering (no audio output/monitoring)
+    const ok = await Rec.setupBuffering(audioCtx, source, chCount, 120)
+    els.save.disabled = !ok
 
-    // Recorder worklet
-    const ok = await Rec.setupRecorder(audioCtx, source, chCount)
-    els.rec.disabled = !ok
+    setInfo(
+      `${stream.getAudioTracks()[0]?.label || 'Mic'} • buffering last 120s • ${chCount} ch @ ${audioCtx.sampleRate | 0} Hz`
+    )
+
+    // Repopulate device labels after permission
+    listDevices(els.deviceSelect, state.currentDeviceId).catch(() => {})
   }
 
-// ================================================================================
   function pause() {
     setMode('paused')
-    detach()
     if (audioCtx) { try { audioCtx.suspend() } catch {} }
     setButton('Play')
-    setInfo('Paused')
+    setInfo('Paused (buffer + spectrogram paused)')
   }
 
-// ================================================================================
   async function resume() {
-    if (audioCtx?.state === 'suspended') { await audioCtx.resume().catch(()=>{}) }
-    attachStream(stream)
+    if (audioCtx?.state === 'suspended') { await audioCtx.resume().catch(() => {}) }
     setMode('playing')
     setButton('Pause')
-    setInfo('Mic resumed')
+    setInfo('Buffering + spectrogram resumed')
   }
 
-// ================================================================================
   function stopAll() {
     Spectro.stop()
-    detach()
-    destroyWaveform()
     if (audioCtx) { try { audioCtx.close() } catch {} ; audioCtx = null }
-    if (stream) { try { stream.getTracks().forEach(t=>t.stop()) } catch {} ; stream = null }
+    if (stream)  { try { stream.getTracks().forEach(t => t.stop()) } catch {} ; stream = null }
   }
 
-// ================================================================================
   // UI
-// ================================================================================
   els.toggle.addEventListener('click', async () => {
-    if (state.mode === 'stopped') await play()
-    else if (state.mode === 'playing') pause()
-    else if (state.mode === 'paused') resume()
+    if (state.mode === 'stopped')       await play()
+    else if (state.mode === 'playing')  pause()
+    else if (state.mode === 'paused')   await resume()
   })
 
-// ================================================================================
-  els.rec.addEventListener('click', () => {
-    const on = Rec.toggleRecording()
-    els.rec.textContent = on ? '■ Stop Rec' : '● Rec'
-    els.save.disabled = !on
-    setInfo(on ? 'Recording…' : 'Recording stopped. Ready to save.')
-  })
-
-// ================================================================================
   els.save.addEventListener('click', () => {
-    Rec.saveAll(audioCtx?.sampleRate || 48000)
-    els.save.disabled = true
-    setInfo('Saved.')
+    Rec.saveAllBuffered(audioCtx?.sampleRate || 48000)
+    setInfo('Saved last 120s from each available channel.')
   })
 
-// ================================================================================
   els.deviceSelect.addEventListener('change', async (e) => {
     state.currentDeviceId = e.target.value
     if (state.mode === 'stopped') return
     pause(); stopAll(); await play()
   })
 
-// ================================================================================
   els.channels.addEventListener('change', async (e) => {
-    state.desiredChannels = parseInt(e.target.value,10) || 2
+    state.desiredChannels = parseInt(e.target.value, 10) || 2
     if (state.mode === 'playing') { pause(); stopAll(); await play() }
   })
 
-// ================================================================================
+  // FFT now affects the live spectrogram again (buffering unaffected)
   els.fft.addEventListener('change', () => {
     if (state.mode === 'playing') {
-      analyzers = createAnalyzers(audioCtx, splitter, parseInt(els.fft.value,10)||1024, analyzers.length)
+      analyzers = createAnalyzers(audioCtx, splitter, parseInt(els.fft.value, 10) || 1024, analyzers.length)
       Spectro.start(analyzers)
     }
   })
 
-// ================================================================================
   window.addEventListener('beforeunload', () => stopAll())
 }

@@ -1,5 +1,4 @@
-# Mic Spectrogram (Modular, 1–4 channels)
-
+# VAR - Visual Audio Recorder
 Refactor of the multichannel app into small ES modules:
 
 ```
@@ -20,11 +19,13 @@ src/
 ```
 
 ## Run
+
 ```bash
 npm install
 npm run dev
 ```
-Open http://localhost:5173, choose devices/channels/FFT, and hit **Play**.
+
+Open <http://localhost:5173>, choose devices/channels/FFT, and hit **Play**.
 
 - **Play/Pause** toggles monitoring
 - **● Rec** begins per-channel capture (if AudioWorklet supported); **Save WAVs** downloads 1 WAV per channel.
