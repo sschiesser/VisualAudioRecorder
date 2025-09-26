@@ -9,10 +9,11 @@
     "preview": "vite preview --port 5174"
   },
   "dependencies": {
+    "prettier": "^3.6.2",
     "wavesurfer.js": "^7.7.13"
   },
   "devDependencies": {
     "vite": "^5.4.0"
   },
-  "description": "Visual Audio Recorder \u2013 multichannel waveform + spectrogram with selection, loop, and per-channel recording"
+  "description": "Visual Audio Recorder – multichannel waveform + spectrogram with selection, loop, and per-channel recording"
 }
