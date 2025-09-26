@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VAR - Visual Audio Recorder</title>
+    <title>Mic Spectrogram — Modular (1–4 channels)</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
     <div class="wrap">
       <header>
-        <h1>Visual Audio Recorder</h1>
+        <h1>Mic Spectrogram</h1>
         <div class="controls">
           <button id="toggle" class="primary">Play</button>
           <button id="rec" class="danger" disabled>● Rec</button>
@@ -34,10 +34,19 @@
               <option>8192</option>
             </select>
           </label>
+          <label>Buffer:
+            <select id="bufferSec">
+              <option value="30">30</option>
+              <option value="60">60</option>
+              <option value="120" selected>120</option>
+              <option value="300">300</option>
+            </select>
+          </label>
         </div>
       </header>
 
       <section class="panes">
+        <div id="waveform" class="card" style="display:none"></div>
         <div id="spectrograms" class="grid4">
           <div class="spec card"><canvas></canvas><span>CH 1</span><i class="lvl"></i></div>
           <div class="spec card"><canvas></canvas><span>CH 2</span><i class="lvl"></i></div>

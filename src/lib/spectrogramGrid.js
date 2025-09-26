@@ -4,17 +4,24 @@
  * @license GPL-3.0-only
  * SPDX-License-Identifier: GPL-3.0-only
  */
-// src/lib/spectrogramGrid.js
+
 import { hueHeat } from './utils/color.js'
 import { isPlaying } from './state.js'
 
-const WINDOW_SECONDS = 120
-const WAVE_RATIO = 0.25  // 25% waveform height
+let windowSeconds = 120
+const WAVE_RATIO = 0.25
 
 let canvases = [], ctxs = [], meters = [], ro = null, loops = []
-let gainEls = [], gainLbls = []
 let freqData = [], timeData = []
 let lastTs = [], pxPerSec = [], accumPx = [], lastW = [], lastH = []
+let gainEls = [], gainLbls = []
+
+export function setWindowSeconds(sec) {
+  const s = Math.max(1, parseInt(sec)||120)
+  windowSeconds = s
+  pxPerSec = canvases.map(c => (c?.width || 300) / windowSeconds)
+  accumPx = canvases.map(() => 0)
+}
 
 export function setupGrid(containerSelector = '#spectrograms', chCount = 2) {
   const holders = Array.from(document.querySelectorAll(containerSelector + ' .spec'))
@@ -24,30 +31,20 @@ export function setupGrid(containerSelector = '#spectrograms', chCount = 2) {
     const label = holder.querySelector('span')
     const lvl = holder.querySelector('.lvl')
 
-    // Ensure a gain slider exists
     let slider = holder.querySelector('input.gainSlider')
     if (!slider) {
       slider = document.createElement('input')
       slider.type = 'range'
       slider.className = 'gainSlider'
-      slider.min = '-24'
-      slider.max = '24'
-      slider.step = '0.5'
-      slider.value = '0'
-      Object.assign(slider.style, {
-        position: 'absolute', right: '8px', top: '28px', width: '140px',
-        background: 'transparent'
-      })
+      slider.min = '-24'; slider.max = '24'; slider.step = '0.5'; slider.value = '0'
+      Object.assign(slider.style, { position:'absolute', right:'8px', top:'28px', width:'140px', background:'transparent' })
       holder.appendChild(slider)
     }
     let gLabel = holder.querySelector('span.gainLabel')
     if (!gLabel) {
       gLabel = document.createElement('span')
-      gLabel.className = 'gainLabel'
-      gLabel.textContent = '0 dB'
-      Object.assign(gLabel.style, {
-        position: 'absolute', right: '8px', top: '50px', fontSize: '11px', opacity: '0.8'
-      })
+      gLabel.className = 'gainLabel'; gLabel.textContent = '0 dB'
+      Object.assign(gLabel.style, { position:'absolute', right:'8px', top:'50px', fontSize:'11px', opacity:'.8' })
       holder.appendChild(gLabel)
     }
 
@@ -58,16 +55,10 @@ export function setupGrid(containerSelector = '#spectrograms', chCount = 2) {
     if (i < chCount) {
       const w = holder.clientWidth || 300
       const h = holder.clientHeight || 150
-      canvas.width = w
-      canvas.height = h
+      canvas.width = w; canvas.height = h
       const ctx = canvas.getContext('2d')
-      ctx.fillStyle = '#0a0f16'
-      ctx.fillRect(0, 0, w, h)
-      canvases[i] = canvas
-      ctxs[i] = ctx
-      meters[i] = lvl
-      gainEls[i] = slider
-      gainLbls[i] = gLabel
+      ctx.fillStyle = '#0a0f16'; ctx.fillRect(0,0,w,h)
+      canvases[i] = canvas; ctxs[i] = ctx; meters[i] = lvl; gainEls[i] = slider; gainLbls[i] = gLabel
       label.textContent = `CH ${i+1}`
     }
   })
@@ -75,7 +66,7 @@ export function setupGrid(containerSelector = '#spectrograms', chCount = 2) {
   freqData = new Array(chCount)
   timeData = new Array(chCount)
   lastTs   = new Array(chCount).fill(0)
-  pxPerSec = new Array(chCount).fill(0)
+  pxPerSec = canvases.map(c => (c?.width || 300) / windowSeconds)
   accumPx  = new Array(chCount).fill(0)
   lastW    = new Array(chCount).fill(0)
   lastH    = new Array(chCount).fill(0)
@@ -89,31 +80,20 @@ export function setupGrid(containerSelector = '#spectrograms', chCount = 2) {
       const old = ctx.getImageData(0, 0, canvas.width, canvas.height)
       const w = holder.clientWidth || 300
       const h = holder.clientHeight || 150
-      canvas.width = w
-      canvas.height = h
+      canvas.width = w; canvas.height = h
       ctx.putImageData(old, Math.max(0, w - old.width), Math.max(0, h - old.height))
-      pxPerSec[i] = w / WINDOW_SECONDS
+      pxPerSec[i] = w / windowSeconds
       lastW[i] = w; lastH[i] = h
     })
   })
-  canvases.forEach((c) => c && ro.observe(c.parentElement))
-
-  // init timing now that canvases have size
-  pxPerSec = canvases.map(c => (c?.width || 300) / WINDOW_SECONDS)
-  lastW    = canvases.map(c => c?.width  || 0)
-  lastH    = canvases.map(c => c?.height || 0)
+  canvases.forEach(c => c && ro.observe(c.parentElement))
 }
 
-// Called by app.js with an array of setter functions: (db:number) => void
 export function bindGains(setters) {
   gainEls.forEach((el, i) => {
     if (!el) return
-    const setDb = (db) => {
-      gainLbls[i].textContent = `${db} dB`
-      if (setters[i]) setters[i](parseFloat(db))
-    }
+    const setDb = (db) => { gainLbls[i].textContent = `${db} dB`; if (setters[i]) setters[i](parseFloat(db)) }
     el.oninput = (e) => setDb(e.target.value)
-    // initialize
     setDb(el.value || '0')
   })
 }
@@ -121,37 +101,28 @@ export function bindGains(setters) {
 export function start(analyzers) {
   stop()
   const chCount = analyzers.length
-
-  for (let i = 0; i < chCount; i++) {
+  for (let i=0;i<chCount;i++) {
     freqData[i] = new Uint8Array(analyzers[i].frequencyBinCount)
     timeData[i] = new Uint8Array(1024)
     lastTs[i]   = performance.now()
-    pxPerSec[i] = (canvases[i].width || 300) / WINDOW_SECONDS
+    pxPerSec[i] = (canvases[i].width || 300) / windowSeconds
     accumPx[i]  = 0
   }
 
   loops = new Array(chCount).fill(null)
-  for (let i = 0; i < chCount; i++) {
+  for (let i=0;i<chCount;i++) {
     const ctx = ctxs[i], canvas = canvases[i], an = analyzers[i], lvl = meters[i]
-
     const draw = (ts) => {
       loops[i] = requestAnimationFrame(draw)
       const w = canvas.width, h = canvas.height
-      if (!w || !h) {
-        lastTs[i] = ts || performance.now()
-        return
-      }
+      if (!w || !h) { lastTs[i] = ts || performance.now(); return }
 
-      if (w !== lastW[i]) { pxPerSec[i] = w / WINDOW_SECONDS; lastW[i] = w }
+      if (w !== lastW[i]) { pxPerSec[i] = w / windowSeconds; lastW[i] = w }
       lastH[i] = h
-
-      const hWave = Math.max(30, Math.round(h * WAVE_RATIO))
+      const hWave = Math.max(30, Math.round(h * 0.25))
       const hSpec = Math.max(1, h - hWave)
 
-      if (!isPlaying()) {
-        lastTs[i] = ts || performance.now()
-        return
-      }
+      if (!isPlaying()) { lastTs[i] = ts || performance.now(); return }
 
       const now = ts || performance.now()
       const dt = Math.max(0, (now - lastTs[i]) / 1000)
@@ -161,7 +132,6 @@ export function start(analyzers) {
       if (steps > w) steps = w
       if (steps > 0) accumPx[i] -= steps
 
-      // fetch data once per frame
       an.getByteFrequencyData(freqData[i])
       an.getByteTimeDomainData(timeData[i])
 
@@ -170,24 +140,17 @@ export function start(analyzers) {
           const img = ctx.getImageData(steps, 0, w - steps, h)
           ctx.putImageData(img, 0, 0)
         } else {
-          ctx.fillStyle = '#0a0f16'
-          ctx.fillRect(0, 0, w, h)
+          ctx.fillStyle = '#0a0f16'; ctx.fillRect(0, 0, w, h)
         }
-        for (let s = steps; s > 0; s--) {
+        for (let s=steps; s>0; s--) {
           const x = w - s
-
-          // waveform (top)
           const t = timeData[i]
-          const val = (t[(t.length / 2) | 0] - 128) / 128
-          const mid = (hWave / 2) | 0
+          const val = (t[(t.length/2)|0] - 128) / 128
+          const mid = (hWave/2)|0
           const y = mid - Math.round(Math.max(-1, Math.min(1, val)) * (hWave / 2 - 1))
-          ctx.fillStyle = '#0a0f16'
-          ctx.fillRect(x, 0, 1, hWave)
-          ctx.fillStyle = '#7cc5ff'
-          ctx.fillRect(x, Math.max(0, y - 1), 1, 2)
-
-          // spectrogram (bottom)
-          for (let yy = 0; yy < hSpec; yy++) {
+          ctx.fillStyle = '#0a0f16'; ctx.fillRect(x, 0, 1, hWave)
+          ctx.fillStyle = '#7cc5ff'; ctx.fillRect(x, Math.max(0, y - 1), 1, 2)
+          for (let yy=0; yy<hSpec; yy++) {
             const bin = Math.floor((yy / hSpec) * freqData[i].length)
             const v = freqData[i][bin]
             ctx.fillStyle = hueHeat(v)
@@ -196,17 +159,12 @@ export function start(analyzers) {
         }
       }
 
-      // level meter
       let acc = 0
-      for (let k = 0; k < timeData[i].length; k++) {
-        const s = (timeData[i][k] - 128) / 128
-        acc += s * s
-      }
+      for (let k=0;k<timeData[i].length;k++){ const s=(timeData[i][k]-128)/128; acc += s*s }
       const rms = Math.sqrt(acc / timeData[i].length)
       const pct = Math.max(0, Math.min(1, rms * 3)) * 100
       if (lvl) lvl.style.background = `linear-gradient(to right, #36d67e ${pct}%, transparent ${pct}%)`
     }
-
     loops[i] = requestAnimationFrame(draw)
   }
 }

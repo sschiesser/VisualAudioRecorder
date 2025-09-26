@@ -4,27 +4,26 @@
  * @license GPL-3.0-only
  * SPDX-License-Identifier: GPL-3.0-only
  */
-// src/lib/recorder.js
+
 import { encodeWavPCM16 } from './utils/wav.js'
 
 let node = null
 
-// Ring buffer per channel
 let rb = {
   seconds: 120,
   sampleRate: 48000,
   chCount: 0,
-  cap: 0,                // frames per channel
-  data: [],              // Float32Array[ch] length = cap
-  writePos: [],          // per-channel write index
-  filled: [],            // per-channel filled frames (<= cap)
+  cap: 0,
+  data: [],
+  writePos: [],
+  filled: [],
 }
 
 function initRing(sampleRate, chCount, seconds = 120) {
-  rb.seconds = seconds
-  rb.sampleRate = sampleRate | 0
-  rb.chCount = chCount | 0
-  rb.cap = (rb.sampleRate * rb.seconds) | 0
+  rb.seconds = seconds|0
+  rb.sampleRate = sampleRate|0
+  rb.chCount = chCount|0
+  rb.cap = (rb.sampleRate * rb.seconds)|0
   rb.data = Array.from({ length: chCount }, () => new Float32Array(rb.cap))
   rb.writePos = Array.from({ length: chCount }, () => 0)
   rb.filled = Array.from({ length: chCount }, () => 0)
@@ -36,7 +35,7 @@ function writeToRing(ch, chunk) {
   while (i < L) {
     const toEnd = N - wp
     const n = Math.min(toEnd, L - i)
-    buf.set(chunk.subarray(i, i + n), wp)
+    buf.set(chunk.subarray(i, i+n), wp)
     wp = (wp + n) % N
     i += n
   }
@@ -55,7 +54,6 @@ function readRing(ch) {
   return out
 }
 
-// NEW: inputNode = post-gain ChannelMergerNode
 export async function setupBuffering(audioCtx, inputNode, chCount, seconds = 120) {
   initRing(audioCtx.sampleRate, chCount, seconds)
   try {
@@ -66,11 +64,11 @@ export async function setupBuffering(audioCtx, inputNode, chCount, seconds = 120
       channelCount: chCount,
       processorOptions: { maxChannels: chCount },
     })
-    inputNode.connect(node) // <— tap post-gain signal
+    inputNode.connect(node)
     node.port.onmessage = (e) => {
       const { type, buffers } = e.data || {}
       if (type !== 'chunk' || !buffers) return
-      for (let i = 0; i < chCount; i++) writeToRing(i, buffers[i] || new Float32Array(0))
+      for (let i=0; i<chCount; i++) writeToRing(i, buffers[i] || new Float32Array(0))
     }
     return true
   } catch (e) {
@@ -80,15 +78,19 @@ export async function setupBuffering(audioCtx, inputNode, chCount, seconds = 120
   }
 }
 
+export function setBufferSeconds(seconds) {
+  initRing(rb.sampleRate, rb.chCount, seconds|0)
+}
+
 export function saveAllBuffered(sampleRateOverride) {
-  const sr = (sampleRateOverride | 0) || rb.sampleRate
-  for (let i = 0; i < rb.chCount; i++) {
+  const sr = (sampleRateOverride|0) || rb.sampleRate
+  for (let i=0;i<rb.chCount;i++){
     const data = readRing(i)
     if (!data.length) continue
     const wav = encodeWavPCM16(data, sr)
     const a = document.createElement('a')
     a.href = URL.createObjectURL(wav)
-    a.download = `last_${rb.seconds}s_ch${i + 1}_${sr}Hz.wav`
+    a.download = `last_${rb.seconds}s_ch${i+1}_${sr}Hz.wav`
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 2000)
   }
