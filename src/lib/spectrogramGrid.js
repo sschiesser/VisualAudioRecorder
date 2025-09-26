@@ -33,8 +33,13 @@ let recArmed = [],
   loopFlags = [],
   setRecCallback = (ch, on) => {};
 let globalRec = false;
+let chRunning = []; // per-channel recording state
 let onArmCb = (ch, armed) => {};
 let onToggleCb = (ch, running) => {};
+
+export function bindRecordControls(cbs) {
+  onToggleCb = cbs && cbs.onToggle ? cbs.onToggle : onToggleCb;
+}
 
 export function setWindowSeconds(sec) {
   const s = Math.max(1, parseInt(sec) || 120);
@@ -186,8 +191,29 @@ export function setupGrid(containerSelector = "#spectrograms", chCount = 2) {
       meters[i] = lvl;
       label.textContent = `CH ${i + 1}`;
     }
+    // Create button if missing
+    let chBtn = holder.querySelector(".chBtn");
+    if (!chBtn) {
+      chBtn = document.createElement("div");
+      chBtn.className = "chBtn";
+      chBtn.textContent = "Play CH";
+      Object.assign(chBtn.style, {
+        position: "absolute",
+        left: "8px",
+        top: "28px",
+        padding: "2px 8px",
+        borderRadius: "10px",
+        border: "1px solid #2b425a",
+        cursor: "pointer",
+        userSelect: "none",
+        background: "#1b2635",
+        color: "#8aa0b4",
+      });
+      holder.appendChild(chBtn);
+    }
   });
   const chCountReal = chCount;
+  chRunning = new Array(chCountReal).fill(false);
   freqData = new Array(chCountReal);
   timeData = new Array(chCountReal);
   lastW = new Array(chCountReal).fill(0);
@@ -202,27 +228,7 @@ export function setupGrid(containerSelector = "#spectrograms", chCount = 2) {
   frozen = new Array(chCountReal).fill(null);
   recArmed = new Array(chCountReal).fill(true);
   loopFlags = new Array(chCountReal).fill(false);
-  // wire REC buttons
-  document.querySelectorAll(".spec .recBtn").forEach((btn, idx) => {
-    if (idx < chCountReal) {
-      btn.style.borderColor = globalRec ? "#ff5161" : "#2b425a";
-      btn.style.color = globalRec ? "#ff5161" : "#8aa0b4";
-      btn.textContent = globalRec ? "● REC" : "ARM";
-      btn.onclick = () => {
-        recArmed[idx] = !recArmed[idx];
-        if (recArmed[idx]) {
-          btn.style.borderColor = globalRec ? "#ff5161" : "#2b425a";
-          btn.style.color = globalRec ? "#ff5161" : "#8aa0b4";
-          btn.textContent = globalRec ? "● REC" : "ARM";
-        } else {
-          btn.style.borderColor = "#2b425a";
-          btn.style.color = "#8aa0b4";
-        }
-        setRecCallback(idx, recArmed[idx]);
-      };
-    }
-  });
-
+  chRunning = new Array(chCountReal).fill(false);
   if (ro) ro.disconnect();
   ro = new ResizeObserver(() => {
     canvases.forEach((canvas, i) => {
@@ -244,10 +250,74 @@ export function setupGrid(containerSelector = "#spectrograms", chCount = 2) {
       lastH[i] = h;
     });
   });
+  const chBtns = document.querySelectorAll(".spec .chBtn");
+  chBtns.forEach((btn, idx) => {
+    if (idx >= chCountReal) {
+      btn.style.display = "none";
+      return;
+    }
+    btn.style.display = "inline-block";
+
+    const paint = () => {
+      const on = !!chRunning[idx];
+      btn.style.borderColor = on ? "#36d67e" : "#2b425a";
+      btn.style.color = on ? "#36d67e" : "#8aa0b4";
+      btn.textContent = on ? "Pause CH" : "Play CH";
+    };
+
+    paint();
+
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+
+    newBtn.onclick = () => {
+      // Toggle the state
+      chRunning[idx] = !chRunning[idx];
+
+      console.log(
+        `Channel ${idx + 1} toggle requested: ${chRunning[idx] ? "ON" : "OFF"}`
+      );
+
+      // Update button appearance
+      paint();
+
+      // Call the recorder to actually change the recording state
+      if (typeof onToggleCb === "function") {
+        onToggleCb(idx, chRunning[idx]);
+        console.log(`Called onToggleCb(${idx}, ${chRunning[idx]})`);
+      } else {
+        console.error("onToggleCb is not a function");
+      }
+    };
+  });
   canvases.forEach((c) => c && ro.observe(c.parentElement));
   attachInteractions(chCountReal);
 }
 
+export function syncChannelButtonStates() {
+  const chBtns = document.querySelectorAll(".spec .chBtn");
+  chBtns.forEach((btn, idx) => {
+    if (idx < chRunning.length) {
+      const on = !!chRunning[idx];
+      btn.style.borderColor = on ? "#36d67e" : "#2b425a";
+      btn.style.color = on ? "#36d67e" : "#8aa0b4";
+      btn.textContent = on ? "Pause CH" : "Play CH";
+    }
+  });
+}
+export function setChannelRecordingState(ch, enabled) {
+  if (ch >= 0 && ch < chRunning.length) {
+    chRunning[ch] = !!enabled;
+
+    // Update button appearance
+    const btn = document.querySelectorAll(".spec .chBtn")[ch];
+    if (btn) {
+      btn.style.borderColor = enabled ? "#36d67e" : "#2b425a";
+      btn.style.color = enabled ? "#36d67e" : "#8aa0b4";
+      btn.textContent = enabled ? "Pause CH" : "Play CH";
+    }
+  }
+}
 function attachInteractions(chCount) {
   canvases.forEach((canvas, i) => {
     if (!canvas) return;
@@ -541,11 +611,6 @@ export function isLoopEnabled(ch) {
 
 export function getRecStates() {
   return Array.isArray(recArmed) ? recArmed.slice() : [];
-}
-
-export function bindRecordControls(cbs) {
-  onArmCb = cbs?.onArm || onArmCb;
-  onToggleCb = cbs?.onToggle || onToggleCb;
 }
 
 export function setGlobalRecRunning(r) {

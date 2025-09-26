@@ -13,53 +13,61 @@ export function initApp() {
     fft: document.getElementById("fft"),
     bufferSec: document.getElementById("bufferSec"),
     info: document.getElementById("info"),
-    // recAll: document.getElementById("recAll"),
   };
 
-  let stream = null,
-    audioCtx = null,
-    splitter = null,
-    analyzers = [],
-    gains = [],
-    merger = null;
-  let previewCtx = null,
-    previewSrc = null,
-    snapshot = null;
-  // recAllRunning = false;
+  let stream = null;
+  let audioCtx = null;
+  let splitter = null;
+  let analyzers = [];
+  let gains = [];
+  let merger = null;
+  let previewCtx = null;
+  let previewSrc = null;
+  let snapshot = null;
 
   const setInfo = (t) => (els.info.textContent = t);
   const setButton = (t) => (els.toggle.textContent = t);
-  const dbToLinear = (db) => Math.pow(10, db / 20);
+  const dbToLin = (db) => Math.pow(10, db / 20);
 
+  // UI prep
   const initialCh = Math.min(4, parseInt(els.channels.value, 10) || 2);
   Spectro.setupGrid("#spectrograms", initialCh);
   Spectro.setWindowSeconds(parseInt(els.bufferSec.value, 10) || 120);
   listDevices(els.deviceSelect, "").catch(() => {});
 
+  // Selection actions
   Spectro.bindSelectionHandlers({
     play: (ch, f0, f1, winSec) => previewSelection(ch, f0, f1, winSec),
     save: (ch, f0, f1, winSec) => saveSelection(ch, f0, f1, winSec),
   });
-  Spectro.bindRecordToggles((ch, on) => {
-    /* legacy no-op */
-  });
+
+  // Per-channel play/pause (recording write gate)
   Spectro.bindRecordControls({
-    onArm: (ch, armed) => {
-      /* nothing to do until global start */
-    },
     onToggle: (ch, running) => {
-      // if (recAllRunning) {
-      Rec.setChannelRecording(ch, running);
-      // }
+      console.log(
+        `App received channel toggle: CH${ch + 1} = ${running ? "ON" : "OFF"}`
+      );
+
+      // Actually set the channel recording state
+      Rec.setChannelRecording(ch, !!running);
+
+      // Verify the state was set
+      const actualState = Rec.getChannelRecording(ch);
+      console.log(
+        `Recorder actual state for CH${ch + 1}: ${actualState ? "ON" : "OFF"}`
+      );
+
+      // Update info display
+      setInfo(`Channel ${ch + 1} recording: ${running ? "ON" : "OFF"}`);
     },
   });
 
   function stopPreview() {
     try {
-      previewSrc?.stop();
+      previewSrc && previewSrc.stop();
     } catch {}
     try {
-      previewCtx?.close();
+      previewCtx && previewCtx.close();
     } catch {}
     previewSrc = null;
     previewCtx = null;
@@ -81,7 +89,6 @@ export function initApp() {
     buf.copyToChannel(data, 0, 0);
     previewSrc = previewCtx.createBufferSource();
     previewSrc.buffer = buf;
-    previewSrc.loop = Spectro.isLoopEnabled(ch);
     previewSrc.connect(previewCtx.destination);
     if (previewCtx.state === "suspended") {
       try {
@@ -91,7 +98,7 @@ export function initApp() {
     previewSrc.onended = () => stopPreview();
     previewSrc.start();
     setInfo(
-      `Monitoring selection ${previewSrc.loop ? "(loop)" : ""}: ch${ch + 1}, ${(data.length / sampleRate).toFixed(2)}s`
+      `Monitoring selection: ch${ch + 1}, ${(data.length / sampleRate).toFixed(2)}s`
     );
   }
 
@@ -125,7 +132,7 @@ export function initApp() {
     stream = stream || (await ensureStream(deviceId, chCount));
     if (audioCtx) {
       try {
-        audioCtx.close();
+        await audioCtx.close();
       } catch {}
     }
     audioCtx = createContext();
@@ -139,8 +146,6 @@ export function initApp() {
     splitter = sp;
     Spectro.setupGrid("#spectrograms", chCount);
     Spectro.bindAudioClock(Rec.onAudioFrames, audioCtx.sampleRate);
-
-    const recStates = Spectro.getRecStates();
 
     gains = Array.from({ length: chCount }, () => {
       const g = audioCtx.createGain();
@@ -163,19 +168,27 @@ export function initApp() {
     }
 
     const setters = gains.map((g) => (db) => {
-      g.gain.value = dbToLinear(db);
+      g.gain.value = dbToLin(db);
     });
     Spectro.bindGains(setters);
+
     setMode("playing");
     setButton("Pause");
     requestAnimationFrame(() => {
       Spectro.start(analyzers);
     });
     const ok = await Rec.setupBuffering(audioCtx, merger, chCount, bufferSec);
-    // re-apply per-channel REC states
-    recStates.forEach((on, i) => {
-      Rec.setChannelRecording(i, !!on);
-    });
+    els.save.disabled = !ok;
+
+    // Global start: enable recording on all channels (no reset)
+    for (let i = 0; i < chCount; i++) {
+      Rec.setChannelRecording(i, true);
+      // Sync the UI state
+      chRunning[i] = true; // This should be accessible or you need to call Spectro.setChannelState(i, true)
+    }
+
+    Rec.debugChannelStates();
+
     setInfo(
       `${stream.getAudioTracks?.[0]?.label || "Mic"} • buffering ${bufferSec}s • ${chCount} ch @ ${audioCtx.sampleRate | 0} Hz`
     );
@@ -188,13 +201,24 @@ export function initApp() {
         audioCtx.suspend();
       } catch {}
     }
-    setButton("Start");
+    setButton("Play");
     setInfo("Paused: zoom/pan/select available.");
     Spectro.enterInspectMode();
     stopPreview();
     const bufSec = parseInt(els.bufferSec.value, 10) || 120;
     snapshot = Rec.getWindowSnapshot(bufSec);
-    Spectro.setPauseSnapshotMeta(snapshot);
+    Spectro.setPauseSnapshotMeta?.(snapshot);
+
+    // DON'T automatically pause all channels - let individual channel controls work
+    // Remove this section:
+    /*
+  {
+    const n = Math.min(4, parseInt(els.channels.value, 10) || 2);
+    for (let i = 0; i < n; i++) {
+      Rec.setChannelRecording(i, false);
+    }
+  }
+  */
   }
 
   async function resume() {
@@ -203,14 +227,29 @@ export function initApp() {
       await audioCtx.resume().catch(() => {});
     }
     setMode("playing");
-    setButton("Stop");
+    setButton("Pause");
     setInfo("Buffering + visuals resumed");
     Spectro.exitInspectMode();
     snapshot = null;
+
+    // DON'T automatically resume all channels - let individual channel controls work
+    // Remove this section:
+    /*
+  {
+    const n = Math.min(4, parseInt(els.channels.value, 10) || 2);
+    for (let i = 0; i < n; i++) {
+      Rec.setChannelRecording(i, true);
+    }
+  }
+  */
+
+    // Instead, sync the visual button states with the actual recorder states
+    if (typeof Spectro.syncChannelButtonStates === "function") {
+      Spectro.syncChannelButtonStates();
+    }
   }
 
   function stopAll() {
-    Spectro.setGlobalRecRunning(false);
     Spectro.stop();
     stopPreview();
     if (audioCtx) {
@@ -227,17 +266,20 @@ export function initApp() {
     }
   }
 
+  // Main Play/Pause for visuals + input graph
   els.toggle.addEventListener("click", async () => {
     if (state.mode === "stopped") await play();
     else if (state.mode === "playing") pause();
     else await resume();
   });
+
   els.deviceSelect.addEventListener("change", async () => {
     if (state.mode === "stopped") return;
     pause();
     stopAll();
     await play();
   });
+
   els.channels.addEventListener("change", async () => {
     if (state.mode === "playing") {
       pause();
@@ -250,6 +292,7 @@ export function initApp() {
       );
     }
   });
+
   els.fft.addEventListener("change", () => {
     if (state.mode === "playing") {
       analyzers.forEach((an) => {
@@ -258,6 +301,7 @@ export function initApp() {
       Spectro.start(analyzers);
     }
   });
+
   els.bufferSec.addEventListener("change", () => {
     const buf = parseInt(els.bufferSec.value, 10) || 120;
     Spectro.setWindowSeconds(buf);
@@ -266,5 +310,6 @@ export function initApp() {
       setInfo(`Buffer length set to ${buf}s`);
     }
   });
+
   window.addEventListener("beforeunload", () => stopAll());
 }
