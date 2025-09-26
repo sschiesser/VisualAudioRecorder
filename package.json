@@ -1,6 +1,6 @@
 {
-  "name": "mic-spectrogram-interactive",
-  "version": "4.1.1",
+  "name": "visual-audio-recorder",
+  "version": "4.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,5 +13,6 @@
   },
   "devDependencies": {
     "vite": "^5.4.0"
-  }
+  },
+  "description": "Visual Audio Recorder \u2013 multichannel waveform + spectrogram with selection, loop, and per-channel recording"
 }

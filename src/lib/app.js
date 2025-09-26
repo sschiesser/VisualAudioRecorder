@@ -31,6 +31,7 @@ export function initApp(){
     play:(ch,f0,f1,winSec)=>previewSelection(ch,f0,f1,winSec),
     save:(ch,f0,f1,winSec)=>saveSelection(ch,f0,f1,winSec),
   })
+  Spectro.bindRecordToggles((ch,on)=>{ if(on){ Rec.resetChannelBuffer(ch) } Rec.setChannelRecording(ch,on) })
 
   function stopPreview(){try{previewSrc?.stop()}catch{};try{previewCtx?.close()}catch{};previewSrc=null;previewCtx=null}
 
@@ -41,10 +42,10 @@ export function initApp(){
     if(!data.length){setInfo('No audio in selection.');return}
     previewCtx=new (window.AudioContext||window.webkitAudioContext)()
     const buf=previewCtx.createBuffer(1,data.length,sampleRate);buf.copyToChannel(data,0,0)
-    previewSrc=previewCtx.createBufferSource();previewSrc.buffer=buf;previewSrc.connect(previewCtx.destination)
+    previewSrc=previewCtx.createBufferSource();previewSrc.buffer=buf;previewSrc.loop=Spectro.isLoopEnabled(ch);previewSrc.connect(previewCtx.destination)
     if(previewCtx.state==='suspended'){try{await previewCtx.resume()}catch{}}
     previewSrc.onended=()=>stopPreview();previewSrc.start()
-    setInfo(`Monitoring selection: ch${ch+1}, ${(data.length/sampleRate).toFixed(2)}s`)
+    setInfo(`Monitoring selection ${previewSrc.loop?'(loop)': ''}: ch${ch+1}, ${(data.length/sampleRate).toFixed(2)}s`)
   }
 
   function saveSelection(ch,f0,f1,winSec){
@@ -72,6 +73,8 @@ export function initApp(){
     Spectro.setupGrid('#spectrograms',chCount)
     Spectro.bindAudioClock(Rec.onAudioFrames,audioCtx.sampleRate)
 
+    const recStates = Spectro.getRecStates()
+
     gains=Array.from({length:chCount},()=>{const g=audioCtx.createGain();g.gain.value=1;return g})
     analyzers=Array.from({length:chCount},()=>{const a=audioCtx.createAnalyser();a.fftSize=parseInt(els.fft.value,10)||1024;a.smoothingTimeConstant=0.8;return a})
     for(let i=0;i<chCount;i++){splitter.connect(gains[i],i,0);gains[i].connect(analyzers[i])}
@@ -79,14 +82,17 @@ export function initApp(){
 
     const setters=gains.map(g=>db=>{g.gain.value=dbToLinear(db)});Spectro.bindGains(setters)
     setMode('playing');setButton('Pause');requestAnimationFrame(()=>{Spectro.start(analyzers)})
-    const ok=await Rec.setupBuffering(audioCtx,merger,chCount,bufferSec);els.save.disabled=!ok
+    const ok=await Rec.setupBuffering(audioCtx,merger,chCount,bufferSec);
+    // re-apply per-channel REC states
+    recStates.forEach((on,i)=>{ Rec.setChannelRecording(i, !!on) })
+    els.save.disabled=!ok
     setInfo(`${stream.getAudioTracks?.[0]?.label||'Mic'} • buffering ${bufferSec}s • ${chCount} ch @ ${audioCtx.sampleRate|0} Hz`)
   }
 
   function pause(){
     setMode('paused');if(audioCtx){try{audioCtx.suspend()}catch{}}
     setButton('Play');setInfo('Paused: zoom/pan/select available.');Spectro.enterInspectMode();stopPreview()
-    const bufSec=parseInt(els.bufferSec.value,10)||120;snapshot=Rec.getWindowSnapshot(bufSec); Spectro.setPauseSnapshotMeta(snapshot)
+    const bufSec=parseInt(els.bufferSec.value,10)||120;snapshot=Rec.getWindowSnapshot(bufSec);Spectro.setPauseSnapshotMeta(snapshot)
   }
 
   async function resume(){
@@ -104,13 +110,10 @@ export function initApp(){
     else if(state.mode==='playing')pause()
     else await resume()
   })
-
   els.save.addEventListener('click',()=>{Rec.saveAllBuffered(audioCtx?.sampleRate||48000);setInfo('Saved last buffer for all channels.')})
-
   els.deviceSelect.addEventListener('change',async()=>{if(state.mode==='stopped')return;pause();stopAll();await play()})
   els.channels.addEventListener('change',async()=>{if(state.mode==='playing'){pause();stopAll();await play()}else{Spectro.setupGrid('#spectrograms',Math.min(4,parseInt(els.channels.value,10)||2))}})
   els.fft.addEventListener('change',()=>{if(state.mode==='playing'){analyzers.forEach(an=>{an.fftSize=parseInt(els.fft.value,10)||1024});Spectro.start(analyzers)}})
   els.bufferSec.addEventListener('change',()=>{const buf=parseInt(els.bufferSec.value,10)||120;Spectro.setWindowSeconds(buf);if(state.mode==='playing'){Rec.setBufferSeconds(buf);setInfo(`Buffer length set to ${buf}s`)}})
-
   window.addEventListener('beforeunload',()=>stopAll())
 }
