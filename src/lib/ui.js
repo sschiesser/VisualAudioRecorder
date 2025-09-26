@@ -22,9 +22,13 @@ export function buildUI() {
   const h1 = $("h1", { text: "Visual Audio Recorder" });
   const controls = $("div", { class: "controls" });
 
-  const btnPlay = $("button", { id: "toggle", class: "primary", text: "Play" });
-  const btnSave = $("button", { id: "save", text: "Save WAVs" });
-  btnSave.disabled = true;
+  const btnPlay = $("button", {
+    id: "toggle",
+    class: "primary",
+    text: "Start",
+  });
+  // const btnSave = $("button", { id: "save", text: "Save WAVs" });
+  // btnSave.disabled = true;
   // const btnRecAll = $('button', { id: 'recAll', class: 'danger', text: 'Start All REC' })
 
   const labMic = $("label", {}, "Mic: ", $("select", { id: "deviceSelect" }));
@@ -82,7 +86,7 @@ export function buildUI() {
     })()
   );
 
-  controls.append(btnPlay, btnSave, labMic, labCh, labFFT, labBuf);
+  controls.append(btnPlay, labMic, labCh, labFFT, labBuf);
   header.append(h1, controls);
 
   const panes = $("section", { class: "panes" });

@@ -176,7 +176,6 @@ export function initApp() {
     recStates.forEach((on, i) => {
       Rec.setChannelRecording(i, !!on);
     });
-    els.save.disabled = !ok;
     setInfo(
       `${stream.getAudioTracks?.[0]?.label || "Mic"} • buffering ${bufferSec}s • ${chCount} ch @ ${audioCtx.sampleRate | 0} Hz`
     );
@@ -189,7 +188,7 @@ export function initApp() {
         audioCtx.suspend();
       } catch {}
     }
-    setButton("Play");
+    setButton("Start");
     setInfo("Paused: zoom/pan/select available.");
     Spectro.enterInspectMode();
     stopPreview();
@@ -204,15 +203,13 @@ export function initApp() {
       await audioCtx.resume().catch(() => {});
     }
     setMode("playing");
-    setButton("Pause");
+    setButton("Stop");
     setInfo("Buffering + visuals resumed");
     Spectro.exitInspectMode();
     snapshot = null;
   }
 
   function stopAll() {
-    // recAllRunning = false;
-    // if (els.recAll) els.recAll.textContent = "Start All REC";
     Spectro.setGlobalRecRunning(false);
     Spectro.stop();
     stopPreview();
@@ -235,28 +232,7 @@ export function initApp() {
     else if (state.mode === "playing") pause();
     else await resume();
   });
-  els.save.addEventListener("click", () => {
-    Rec.saveAllBuffered(audioCtx?.sampleRate || 48000);
-    setInfo("Saved last buffer for all channels.");
-  });
-
-  /*   els.recAll.addEventListener("click", () => {
-    if (!recAllRunning) {
-      const arms = Spectro.getArmStates();
-      Rec.startAllRecording(arms);
-      recAllRunning = true;
-      Spectro.setGlobalRecRunning(true);
-      els.recAll.textContent = "Stop All REC";
-      setInfo("Recording started for armed channels.");
-    } else {
-      Rec.stopAllRecording();
-      recAllRunning = false;
-      Spectro.setGlobalRecRunning(false);
-      els.recAll.textContent = "Start All REC";
-      setInfo("Recording stopped.");
-    }
-  });
- */ els.deviceSelect.addEventListener("change", async () => {
+  els.deviceSelect.addEventListener("change", async () => {
     if (state.mode === "stopped") return;
     pause();
     stopAll();
