@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2025 sschiesser
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
 function floatTo16BitPCM(float32) {
   const buffer = new ArrayBuffer(float32.length * 2)
   const view = new DataView(buffer)

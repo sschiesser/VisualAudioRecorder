@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2025 sschiesser
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
 import RecordPlugin from 'wavesurfer.js/dist/plugins/record.esm.js'
 
 export async function listDevices(selectEl, currentId='') {

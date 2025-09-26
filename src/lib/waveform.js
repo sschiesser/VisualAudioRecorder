@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2025 sschiesser
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
 import WaveSurfer from 'wavesurfer.js'
 import RecordPlugin from 'wavesurfer.js/dist/plugins/record.esm.js'
 

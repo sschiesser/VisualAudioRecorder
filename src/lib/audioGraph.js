@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2025 sschiesser
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
 import { state } from './state.js'
 
 export async function ensureStream(selectedId, desiredChannels=2) {

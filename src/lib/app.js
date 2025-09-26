@@ -1,3 +1,9 @@
+
+/*
+ * Copyright (C) 2025 sschiesser
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 import { state, setMode, isPlaying } from './state.js'
 import { listDevices } from './deviceManager.js'
 import { ensureStream, createContext, buildGraph, createAnalyzers } from './audioGraph.js'
@@ -5,6 +11,7 @@ import { setupWaveform, attachStream, detach, destroy as destroyWaveform } from 
 import * as Spectro from './spectrogramGrid.js'
 import * as Rec from './recorder.js'
 
+// ================================================================================
 export function initApp() {
   const els = {
     toggle: document.getElementById('toggle'),
@@ -29,6 +36,12 @@ export function initApp() {
   // Initial devices (labels improve after permission)
   listDevices(els.deviceSelect, state.currentDeviceId).then(id => state.currentDeviceId = id).catch(()=>{})
 
+/*================================================================================
+  Initializes (or resumes) the microphone stream and AudioContext, 
+  builds the audio graph, starts waveform/spectrogram analyzers,
+  and enables recording/UI.
+  ================================================================================
+*/
   async function play() {
     // Device list (may gain labels now)
     state.currentDeviceId = await listDevices(els.deviceSelect, state.currentDeviceId).catch(()=>els.deviceSelect.value || state.currentDeviceId)
@@ -65,6 +78,7 @@ export function initApp() {
     els.rec.disabled = !ok
   }
 
+// ================================================================================
   function pause() {
     setMode('paused')
     detach()
@@ -73,6 +87,7 @@ export function initApp() {
     setInfo('Paused')
   }
 
+// ================================================================================
   async function resume() {
     if (audioCtx?.state === 'suspended') { await audioCtx.resume().catch(()=>{}) }
     attachStream(stream)
@@ -81,6 +96,7 @@ export function initApp() {
     setInfo('Mic resumed')
   }
 
+// ================================================================================
   function stopAll() {
     Spectro.stop()
     detach()
@@ -89,13 +105,16 @@ export function initApp() {
     if (stream) { try { stream.getTracks().forEach(t=>t.stop()) } catch {} ; stream = null }
   }
 
+// ================================================================================
   // UI
+// ================================================================================
   els.toggle.addEventListener('click', async () => {
     if (state.mode === 'stopped') await play()
     else if (state.mode === 'playing') pause()
     else if (state.mode === 'paused') resume()
   })
 
+// ================================================================================
   els.rec.addEventListener('click', () => {
     const on = Rec.toggleRecording()
     els.rec.textContent = on ? '■ Stop Rec' : '● Rec'
@@ -103,23 +122,27 @@ export function initApp() {
     setInfo(on ? 'Recording…' : 'Recording stopped. Ready to save.')
   })
 
+// ================================================================================
   els.save.addEventListener('click', () => {
     Rec.saveAll(audioCtx?.sampleRate || 48000)
     els.save.disabled = true
     setInfo('Saved.')
   })
 
+// ================================================================================
   els.deviceSelect.addEventListener('change', async (e) => {
     state.currentDeviceId = e.target.value
     if (state.mode === 'stopped') return
     pause(); stopAll(); await play()
   })
 
+// ================================================================================
   els.channels.addEventListener('change', async (e) => {
     state.desiredChannels = parseInt(e.target.value,10) || 2
     if (state.mode === 'playing') { pause(); stopAll(); await play() }
   })
 
+// ================================================================================
   els.fft.addEventListener('change', () => {
     if (state.mode === 'playing') {
       analyzers = createAnalyzers(audioCtx, splitter, parseInt(els.fft.value,10)||1024, analyzers.length)
@@ -127,5 +150,6 @@ export function initApp() {
     }
   })
 
+// ================================================================================
   window.addEventListener('beforeunload', () => stopAll())
 }

@@ -28,3 +28,15 @@ Open http://localhost:5173, choose devices/channels/FFT, and hit **Play**.
 
 - **Play/Pause** toggles monitoring
 - **● Rec** begins per-channel capture (if AudioWorklet supported); **Save WAVs** downloads 1 WAV per channel.
+
+Development
+-----------
+
+This project uses Vite for development. Default dev server is on port 5173.
+
+License
+-------
+
+The project is licensed under the GNU GPL v3. Source contains SPDX headers
+(`GPL-3.0-only`) at the top of JavaScript files; see `LICENSE` for full
+terms.
