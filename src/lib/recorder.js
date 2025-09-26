@@ -4,7 +4,7 @@
  * @license GPL-3.0-only
  * SPDX-License-Identifier: GPL-3.0-only
  */
-
+// src/lib/recorder.js
 import { encodeWavPCM16 } from './utils/wav.js'
 
 let node = null
@@ -16,11 +16,10 @@ let rb = {
   chCount: 0,
   cap: 0,                // frames per channel
   data: [],              // Float32Array[ch] length = cap
-  writePos: [],          // per-channel write index (0..cap-1)
+  writePos: [],          // per-channel write index
   filled: [],            // per-channel filled frames (<= cap)
 }
 
-// ---- ring helpers ----
 function initRing(sampleRate, chCount, seconds = 120) {
   rb.seconds = seconds
   rb.sampleRate = sampleRate | 0
@@ -32,43 +31,33 @@ function initRing(sampleRate, chCount, seconds = 120) {
 }
 
 function writeToRing(ch, chunk) {
-  const buf = rb.data[ch]
-  const N = buf.length
-  let wp = rb.writePos[ch]
-  let i = 0
-  const L = chunk.length
+  const buf = rb.data[ch]; const N = buf.length
+  let wp = rb.writePos[ch]; let i = 0; const L = chunk.length
   while (i < L) {
-    const spaceToEnd = N - wp
-    const toCopy = Math.min(spaceToEnd, L - i)
-    buf.set(chunk.subarray(i, i + toCopy), wp)
-    wp = (wp + toCopy) % N
-    i += toCopy
+    const toEnd = N - wp
+    const n = Math.min(toEnd, L - i)
+    buf.set(chunk.subarray(i, i + n), wp)
+    wp = (wp + n) % N
+    i += n
   }
   rb.writePos[ch] = wp
   rb.filled[ch] = Math.min(N, rb.filled[ch] + L)
 }
 
 function readRing(ch) {
-  const buf = rb.data[ch]
-  const filled = rb.filled[ch]
-  const N = buf.length
+  const buf = rb.data[ch]; const filled = rb.filled[ch]; const N = buf.length
   if (!filled) return new Float32Array(0)
   const out = new Float32Array(filled)
   const start = (rb.writePos[ch] - filled + N) % N
-  const firstLen = Math.min(N - start, filled)
-  out.set(buf.subarray(start, start + firstLen), 0)
-  if (firstLen < filled) {
-    out.set(buf.subarray(0, filled - firstLen), firstLen)
-  }
+  const first = Math.min(N - start, filled)
+  out.set(buf.subarray(start, start + first), 0)
+  if (first < filled) out.set(buf.subarray(0, filled - first), first)
   return out
 }
 
-// ---- public API ----
-export async function setupBuffering(audioCtx, source, chCount, seconds = 120) {
-  // Prepare ring buffers
+// NEW: inputNode = post-gain ChannelMergerNode
+export async function setupBuffering(audioCtx, inputNode, chCount, seconds = 120) {
   initRing(audioCtx.sampleRate, chCount, seconds)
-
-  // AudioWorklet node that feeds us Float32 frames
   try {
     await audioCtx.audioWorklet.addModule('/src/lib/recorder-worklet.js')
     node = new AudioWorkletNode(audioCtx, 'multichannel-recorder', {
@@ -77,7 +66,7 @@ export async function setupBuffering(audioCtx, source, chCount, seconds = 120) {
       channelCount: chCount,
       processorOptions: { maxChannels: chCount },
     })
-    source.connect(node)
+    inputNode.connect(node) // <— tap post-gain signal
     node.port.onmessage = (e) => {
       const { type, buffers } = e.data || {}
       if (type !== 'chunk' || !buffers) return
@@ -89,10 +78,6 @@ export async function setupBuffering(audioCtx, source, chCount, seconds = 120) {
     node = null
     return false
   }
-}
-
-export function getBuffered(channelIndex = 0) {
-  return readRing(channelIndex)
 }
 
 export function saveAllBuffered(sampleRateOverride) {

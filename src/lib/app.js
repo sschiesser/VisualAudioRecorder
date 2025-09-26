@@ -5,18 +5,18 @@
  * @license GPL-3.0-only
  * SPDX-License-Identifier: GPL-3.0-only
  */
-
-
+// src/lib/app.js
 import { state, setMode } from './state.js'
 import { listDevices } from './deviceManager.js'
-import { ensureStream, createContext, buildGraph, createAnalyzers } from './audioGraph.js'
+import { ensureStream, createContext, buildGraph } from './audioGraph.js'
 import * as Spectro from './spectrogramGrid.js'
 import * as Rec from './recorder.js'
 
 // Play/Pause:
-// - Buffers last 120s per channel (no audio monitoring).
-// - Renders per-channel waveform + spectrograms live.
-// - Number of channel panes == channel selector (1–4).
+// - Buffers last 120s per channel (no audio monitor).
+// - Renders per-channel waveform + spectrograms (120s wide).
+// - Shows exactly the selected number of channels (1–4).
+// - NEW: Per-channel gain sliders (−24 dB … +24 dB) affecting visuals & buffer.
 
 export function initApp() {
   const els = {
@@ -29,16 +29,13 @@ export function initApp() {
     info: document.getElementById('info'),
   }
 
-  // Initialize the grid to match the current channel selector (before Play)
-  const initialCh = Math.min(4, parseInt(document.getElementById('channels').value, 10) || 2)
-  Spectro.setupGrid('#spectrograms', initialCh)
-
-
   let stream = null
   let audioCtx = null
   let source = null
   let splitter = null
   let analyzers = []
+  let gains = []
+  let merger = null
 
   const setInfo   = (t) => (els.info.textContent = t)
   const setButton = (t) => (els.toggle.textContent = t)
@@ -46,16 +43,24 @@ export function initApp() {
   els.rec.disabled = true
   els.rec.title = 'Disabled: Play buffers last 120s automatically'
 
+  // Initialize grid to current channel selector on first load (before Play)
+  const initialCh = Math.min(4, parseInt(els.channels.value, 10) || 2)
+  Spectro.setupGrid('#spectrograms', initialCh)
+
   // Initial device list (labels improve after mic permission)
   listDevices(els.deviceSelect, state.currentDeviceId)
     .then((id) => (state.currentDeviceId = id))
     .catch(() => {})
 
+  function dbToLinear(db) {
+    return Math.pow(10, db / 20)
+  }
+
   async function play() {
-    // Refresh devices; read channels (we will SHOW exactly this many panes)
+    // Refresh devices; read channels (we SHOW exactly this many panes)
     state.currentDeviceId = await listDevices(els.deviceSelect, state.currentDeviceId)
       .catch(() => els.deviceSelect.value || state.currentDeviceId)
-    state.desiredChannels = parseInt(els.channels.value, 10) || 2
+    state.desiredChannels = Math.min(4, parseInt(els.channels.value, 10) || 2)
 
     // Stream + AudioContext
     stream = stream || (await ensureStream(state.currentDeviceId, state.desiredChannels))
@@ -63,39 +68,60 @@ export function initApp() {
     audioCtx = createContext()
     if (audioCtx.state === 'suspended') { try { await audioCtx.resume() } catch {} }
 
-    // Build graph
+    // Build base graph (source + splitter)
     const graph = buildGraph(audioCtx, stream)
     source = graph.source
     splitter = graph.splitter
 
-    // *** Pane count = selection (capped to 4) ***
-    const chCount = Math.min(4, state.desiredChannels)
-
-    // Spectrogram grid + analyzers
+    const chCount = state.desiredChannels
     Spectro.setupGrid('#spectrograms', chCount)
+
+    // Create per-channel GainNodes and AnalyserNodes, wire: splitter -> gain[i] -> analyser[i]
+    gains = Array.from({ length: chCount }, () => {
+      const g = audioCtx.createGain()
+      g.gain.value = 1 // 0 dB
+      return g
+    })
+
+    analyzers = Array.from({ length: chCount }, () => {
+      const an = audioCtx.createAnalyser()
+      an.fftSize = parseInt(els.fft.value, 10) || 1024
+      an.smoothingTimeConstant = 0.8
+      return an
+    })
+
+    for (let i = 0; i < chCount; i++) {
+      splitter.connect(gains[i], i, 0)
+      gains[i].connect(analyzers[i])
+    }
+
+    // Merge post-gain channels for the recorder worklet so saved audio reflects gain
+    merger = audioCtx.createChannelMerger(chCount)
+    for (let i = 0; i < chCount; i++) {
+      // connect gain[i] to merger's input channel i
+      gains[i].connect(merger, 0, i)
+    }
+
+    // Bind gain sliders in the grid to these GainNodes
+    const setters = gains.map((g) => (db) => { g.gain.value = dbToLinear(db) })
+    Spectro.bindGains(setters)
+
     setMode('playing')
     setButton('Pause')
-    analyzers = createAnalyzers(
-      audioCtx,
-      splitter,
-      parseInt(els.fft.value, 10) || 1024,
-      chCount
-    )
 
+    // Defer start one frame to avoid 0×0 canvas at first layout
     requestAnimationFrame(() => {
       Spectro.start(analyzers)
-    }); // ensure UI updates before heavy start
-    
+    })
 
-    // Start 120s circular buffering (no audio output/monitoring)
-    const ok = await Rec.setupBuffering(audioCtx, source, chCount, 120)
+    // Start 120s circular buffering from the POST-GAIN merger (affects saved audio)
+    const ok = await Rec.setupBuffering(audioCtx, merger, chCount, 120)
     els.save.disabled = !ok
 
     setInfo(
       `${stream.getAudioTracks?.()[0]?.label || 'Mic'} • buffering 120s • ${chCount} ch @ ${audioCtx.sampleRate | 0} Hz`
     )
 
-    // Repopulate device labels after permission
     listDevices(els.deviceSelect, state.currentDeviceId).catch(() => {})
   }
 
@@ -117,6 +143,8 @@ export function initApp() {
     Spectro.stop()
     if (audioCtx) { try { audioCtx.close() } catch {} ; audioCtx = null }
     if (stream)  { try { stream.getTracks().forEach(t => t.stop()) } catch {} ; stream = null }
+    gains = []
+    merger = null
   }
 
   // UI
@@ -128,7 +156,7 @@ export function initApp() {
 
   els.save.addEventListener('click', () => {
     Rec.saveAllBuffered(audioCtx?.sampleRate || 48000)
-    setInfo('Saved last 120s from each visible channel.')
+    setInfo('Saved last 120s from each visible channel (post-gain).')
   })
 
   els.deviceSelect.addEventListener('change', async (e) => {
@@ -137,22 +165,21 @@ export function initApp() {
     pause(); stopAll(); await play()
   })
 
-els.channels.addEventListener('change', async (e) => {
-  state.desiredChannels = parseInt(e.target.value, 10) || 2
-  if (state.mode === 'playing') {
-    pause(); stopAll(); await play()
-  } else {
-    // Reflect selection immediately when not playing
-    Spectro.setupGrid('#spectrograms', Math.min(4, state.desiredChannels))
-  }
-})
-
+  els.channels.addEventListener('change', async (e) => {
+    state.desiredChannels = Math.min(4, parseInt(e.target.value, 10) || 2)
+    if (state.mode === 'playing') {
+      pause(); stopAll(); await play()
+    } else {
+      // Update layout immediately when stopped
+      Spectro.setupGrid('#spectrograms', state.desiredChannels)
+    }
+  })
 
   // FFT affects visuals only (buffering unaffected)
   els.fft.addEventListener('change', () => {
     if (state.mode === 'playing') {
-      analyzers = createAnalyzers(audioCtx, splitter, parseInt(els.fft.value, 10) || 1024, analyzers.length)
-      Spectro.start(analyzers)
+      analyzers.forEach(an => { an.fftSize = parseInt(els.fft.value, 10) || 1024 })
+      Spectro.start(analyzers) // restart loops to use new bin count
     }
   })
 

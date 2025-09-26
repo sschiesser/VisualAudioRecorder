@@ -4,29 +4,57 @@
  * @license GPL-3.0-only
  * SPDX-License-Identifier: GPL-3.0-only
  */
-
+// src/lib/spectrogramGrid.js
 import { hueHeat } from './utils/color.js'
 import { isPlaying } from './state.js'
 
-// Fixed time window in seconds (full canvas width)
 const WINDOW_SECONDS = 120
-// Portion of each channel canvas reserved for waveform (rest is spectrogram)
-const WAVE_RATIO = 0.25  // 25% height waveform, 75% spectrogram
+const WAVE_RATIO = 0.25  // 25% waveform height
 
 let canvases = [], ctxs = [], meters = [], ro = null, loops = []
-let analyzersRef = []
+let gainEls = [], gainLbls = []
 let freqData = [], timeData = []
-let lastTs = [], pxPerSec = [], accumPx = []
-let lastW = [], lastH = []
+let lastTs = [], pxPerSec = [], accumPx = [], lastW = [], lastH = []
 
 export function setupGrid(containerSelector = '#spectrograms', chCount = 2) {
   const holders = Array.from(document.querySelectorAll(containerSelector + ' .spec'))
-  canvases = []; ctxs = []; meters = []
+  canvases = []; ctxs = []; meters = []; gainEls = []; gainLbls = []
   holders.forEach((holder, i) => {
     const canvas = holder.querySelector('canvas')
     const label = holder.querySelector('span')
     const lvl = holder.querySelector('.lvl')
+
+    // Ensure a gain slider exists
+    let slider = holder.querySelector('input.gainSlider')
+    if (!slider) {
+      slider = document.createElement('input')
+      slider.type = 'range'
+      slider.className = 'gainSlider'
+      slider.min = '-24'
+      slider.max = '24'
+      slider.step = '0.5'
+      slider.value = '0'
+      Object.assign(slider.style, {
+        position: 'absolute', right: '8px', top: '28px', width: '140px',
+        background: 'transparent'
+      })
+      holder.appendChild(slider)
+    }
+    let gLabel = holder.querySelector('span.gainLabel')
+    if (!gLabel) {
+      gLabel = document.createElement('span')
+      gLabel.className = 'gainLabel'
+      gLabel.textContent = '0 dB'
+      Object.assign(gLabel.style, {
+        position: 'absolute', right: '8px', top: '50px', fontSize: '11px', opacity: '0.8'
+      })
+      holder.appendChild(gLabel)
+    }
+
     holder.style.display = (i < chCount) ? 'block' : 'none'
+    slider.style.display = (i < chCount) ? 'block' : 'none'
+    gLabel.style.display  = (i < chCount) ? 'block' : 'none'
+
     if (i < chCount) {
       const w = holder.clientWidth || 300
       const h = holder.clientHeight || 150
@@ -38,19 +66,20 @@ export function setupGrid(containerSelector = '#spectrograms', chCount = 2) {
       canvases[i] = canvas
       ctxs[i] = ctx
       meters[i] = lvl
+      gainEls[i] = slider
+      gainLbls[i] = gLabel
       label.textContent = `CH ${i+1}`
     }
   })
 
-  // Prepare arrays per visible channel
-  analyzersRef = new Array(chCount)
   freqData = new Array(chCount)
   timeData = new Array(chCount)
-  lastTs = new Array(chCount).fill(0)
+  lastTs   = new Array(chCount).fill(0)
   pxPerSec = new Array(chCount).fill(0)
-  accumPx = new Array(chCount).fill(0)
+  accumPx  = new Array(chCount).fill(0)
+  lastW    = new Array(chCount).fill(0)
+  lastH    = new Array(chCount).fill(0)
 
-  // Keep drawings on resize and recompute pixels-per-second
   if (ro) ro.disconnect()
   ro = new ResizeObserver(() => {
     canvases.forEach((canvas, i) => {
@@ -62,24 +91,37 @@ export function setupGrid(containerSelector = '#spectrograms', chCount = 2) {
       const h = holder.clientHeight || 150
       canvas.width = w
       canvas.height = h
-      // shift old to the left if the new canvas is wider
       ctx.putImageData(old, Math.max(0, w - old.width), Math.max(0, h - old.height))
       pxPerSec[i] = w / WINDOW_SECONDS
+      lastW[i] = w; lastH[i] = h
     })
   })
   canvases.forEach((c) => c && ro.observe(c.parentElement))
 
+  // init timing now that canvases have size
   pxPerSec = canvases.map(c => (c?.width || 300) / WINDOW_SECONDS)
   lastW    = canvases.map(c => c?.width  || 0)
   lastH    = canvases.map(c => c?.height || 0)
 }
 
-export function start(analyzers) {
-  stop() // clear old loops
-  const chCount = analyzers.length
-  analyzersRef = analyzers
+// Called by app.js with an array of setter functions: (db:number) => void
+export function bindGains(setters) {
+  gainEls.forEach((el, i) => {
+    if (!el) return
+    const setDb = (db) => {
+      gainLbls[i].textContent = `${db} dB`
+      if (setters[i]) setters[i](parseFloat(db))
+    }
+    el.oninput = (e) => setDb(e.target.value)
+    // initialize
+    setDb(el.value || '0')
+  })
+}
 
-  // allocate data buffers & timing
+export function start(analyzers) {
+  stop()
+  const chCount = analyzers.length
+
   for (let i = 0; i < chCount; i++) {
     freqData[i] = new Uint8Array(analyzers[i].frequencyBinCount)
     timeData[i] = new Uint8Array(1024)
@@ -95,24 +137,22 @@ export function start(analyzers) {
     const draw = (ts) => {
       loops[i] = requestAnimationFrame(draw)
       const w = canvas.width, h = canvas.height
-      if(!w || !h) {
+      if (!w || !h) {
         lastTs[i] = ts || performance.now()
         return
       }
-      if (w !== lastW[i]) {
-        pxPerSec[i] = w / WINDOW_SECONDS
-        lastW[i] = w
-      }
+
+      if (w !== lastW[i]) { pxPerSec[i] = w / WINDOW_SECONDS; lastW[i] = w }
       lastH[i] = h
-      const hWave = Math.max(30, Math.round(h * WAVE_RATIO))     // waveform area height
-      const hSpec = Math.max(1, h - hWave)                        // spectrogram area height
+
+      const hWave = Math.max(30, Math.round(h * WAVE_RATIO))
+      const hSpec = Math.max(1, h - hWave)
 
       if (!isPlaying()) {
         lastTs[i] = ts || performance.now()
         return
       }
 
-      // advance time in pixels so width == WINDOW_SECONDS
       const now = ts || performance.now()
       const dt = Math.max(0, (now - lastTs[i]) / 1000)
       lastTs[i] = now
@@ -121,12 +161,11 @@ export function start(analyzers) {
       if (steps > w) steps = w
       if (steps > 0) accumPx[i] -= steps
 
-      // Pull data once per frame
+      // fetch data once per frame
       an.getByteFrequencyData(freqData[i])
       an.getByteTimeDomainData(timeData[i])
 
       if (steps > 0) {
-        // Shift entire canvas left by 'steps' pixels
         if (steps < w) {
           const img = ctx.getImageData(steps, 0, w - steps, h)
           ctx.putImageData(img, 0, 0)
@@ -134,27 +173,20 @@ export function start(analyzers) {
           ctx.fillStyle = '#0a0f16'
           ctx.fillRect(0, 0, w, h)
         }
-
-        // Draw 'steps' new columns on the right
         for (let s = steps; s > 0; s--) {
           const x = w - s
 
-          // --- Waveform column (top area) ---
-          // Map one sample (centered) to a y position
+          // waveform (top)
           const t = timeData[i]
-          // pick a representative sample (middle)
           const val = (t[(t.length / 2) | 0] - 128) / 128
           const mid = (hWave / 2) | 0
-          const amp = Math.max(-1, Math.min(1, val))
-          const y = mid - Math.round(amp * (hWave / 2 - 1))
-
-          // Clear column area then draw a 2px-high line for visibility
+          const y = mid - Math.round(Math.max(-1, Math.min(1, val)) * (hWave / 2 - 1))
           ctx.fillStyle = '#0a0f16'
           ctx.fillRect(x, 0, 1, hWave)
           ctx.fillStyle = '#7cc5ff'
           ctx.fillRect(x, Math.max(0, y - 1), 1, 2)
 
-          // --- Spectrogram column (bottom area) ---
+          // spectrogram (bottom)
           for (let yy = 0; yy < hSpec; yy++) {
             const bin = Math.floor((yy / hSpec) * freqData[i].length)
             const v = freqData[i][bin]
@@ -164,7 +196,7 @@ export function start(analyzers) {
         }
       }
 
-      // Simple level meter (RMS-ish), independent of steps
+      // level meter
       let acc = 0
       for (let k = 0; k < timeData[i].length; k++) {
         const s = (timeData[i][k] - 128) / 128

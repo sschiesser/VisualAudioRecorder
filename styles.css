@@ -91,7 +91,6 @@ select {
 /* Two-pane layout: waveform (fixed height) + main panes */
 .panes {
   display: grid;
-  grid-template-rows: 120px 1fr;
   gap: 12px;
   min-height: 0; /* allow children to shrink inside flex/grid containers */
 }
@@ -105,9 +104,6 @@ select {
   position: relative;
   padding: 10px;
 }
-
-/* Waveform container (WaveSurfer attaches here) */
-#waveform { height: 120px; }
 
 /* Spectrogram grid: stacked columns for channels */
 .grid4 {
