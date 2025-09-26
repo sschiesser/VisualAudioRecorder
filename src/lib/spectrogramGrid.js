@@ -16,6 +16,9 @@ let pxPerFrame=[],frameAcc=[],unsubClock=null
 let inspect=false,frozen=[],zoom=[],viewStart=[],selection=[],handlers={play:null,save:null}
 let snapMeta=null
 let recArmed=[], loopFlags=[], setRecCallback=(ch,on)=>{}
+let globalRec=false
+let onArmCb = (ch, armed)=>{}
+let onToggleCb = (ch, running)=>{}
 
 export function setWindowSeconds(sec){
   const s=Math.max(1,parseInt(sec)||120);windowSeconds=s
@@ -69,8 +72,8 @@ export function setupGrid(containerSelector='#spectrograms',chCount=2){
   // wire REC buttons
   document.querySelectorAll('.spec .recBtn').forEach((btn, idx)=>{
     if(idx<chCountReal){
-      btn.style.borderColor='#ff5161'; btn.style.color='#ff5161'
-      btn.onclick=()=>{ recArmed[idx]=!recArmed[idx]; if(recArmed[idx]){ btn.style.borderColor='#ff5161'; btn.style.color='#ff5161' } else { btn.style.borderColor='#2b425a'; btn.style.color='#8aa0b4' } setRecCallback(idx, recArmed[idx]) }
+      btn.style.borderColor= globalRec ? '#ff5161' : '#2b425a'; btn.style.color= globalRec ? '#ff5161' : '#8aa0b4'; btn.textContent = globalRec ? '● REC' : 'ARM'
+      btn.onclick=()=>{ recArmed[idx]=!recArmed[idx]; if(recArmed[idx]){ btn.style.borderColor= globalRec ? '#ff5161' : '#2b425a'; btn.style.color= globalRec ? '#ff5161' : '#8aa0b4'; btn.textContent = globalRec ? '● REC' : 'ARM' } else { btn.style.borderColor='#2b425a'; btn.style.color='#8aa0b4' } setRecCallback(idx, recArmed[idx]) }
     }
   })
 
@@ -232,3 +235,13 @@ export function bindRecordToggles(setter){ setRecCallback = setter }
 export function isLoopEnabled(ch){ return !!loopFlags[ch] }
 
 export function getRecStates(){ return Array.isArray(recArmed) ? recArmed.slice() : [] }
+
+export function bindRecordControls(cbs){ onArmCb=cbs?.onArm||onArmCb; onToggleCb=cbs?.onToggle||onToggleCb }
+
+export function setGlobalRecRunning(r){ globalRec=!!r; // update buttons to reflect mode
+  document.querySelectorAll('.spec .recBtn').forEach((btn, idx)=>{
+    if(globalRec){ btn.textContent = (recArmed[idx] ? '● REC' : '⏸︎'); btn.style.borderColor = recArmed[idx] ? '#ff5161' : '#2b425a'; btn.style.color = recArmed[idx] ? '#ff5161' : '#8aa0b4' }
+    else { btn.textContent = recArmed[idx] ? 'ARMED' : 'ARM'; btn.style.borderColor = recArmed[idx] ? '#d2a64f' : '#2b425a'; btn.style.color = recArmed[idx] ? '#ffd37a' : '#8aa0b4' }
+  }) }
+
+export function getArmStates(){ return Array.isArray(recArmed) ? recArmed.slice() : [] }

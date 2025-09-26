@@ -24,3 +24,5 @@ select{background:#0c141e;color:var(--fg);border:1px solid #22303f;border-radius
 .overlay .hint{font-size:11px;opacity:.8}
 .spec .sel{position:absolute;border:1px dashed var(--accent);background:rgba(124,197,255,.12);pointer-events:none}
 footer{color:var(--muted)}
+
+button.danger{background:linear-gradient(180deg,#61202a,#3a151b);border:1px solid #7a2b36}

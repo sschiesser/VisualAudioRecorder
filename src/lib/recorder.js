@@ -85,3 +85,14 @@ export function saveAllBuffered(sampleRateOverride){
 export function setChannelRecording(ch,enabled){ if(ch<0||ch>=rb.chCount)return; recEnabled[ch]=!!enabled }
 export function getChannelRecording(ch){ return !!recEnabled[ch] }
 export function resetChannelBuffer(ch){ if(ch<0||ch>=rb.chCount)return; rb.writePos[ch]=0; rb.filled[ch]=0 }
+
+export function startAllRecording(armedMask){
+  const mask = Array.isArray(armedMask) ? armedMask : Array.from({length: rb.chCount}, () => true)
+  // reset and enable only armed channels
+  for(let ch=0; ch<rb.chCount; ch++){
+    if(mask[ch]){ rb.writePos[ch]=0; rb.filled[ch]=0; recEnabled[ch]=true } else { recEnabled[ch]=false }
+  }
+}
+export function stopAllRecording(){
+  for(let ch=0; ch<rb.chCount; ch++){ recEnabled[ch]=false }
+}

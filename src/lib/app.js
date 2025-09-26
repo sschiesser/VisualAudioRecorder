@@ -13,10 +13,11 @@ export function initApp(){
     fft:document.getElementById('fft'),
     bufferSec:document.getElementById('bufferSec'),
     info:document.getElementById('info'),
+    recAll:document.getElementById('recAll'),
   }
 
   let stream=null,audioCtx=null,splitter=null,analyzers=[],gains=[],merger=null
-  let previewCtx=null,previewSrc=null,snapshot=null
+  let previewCtx=null,previewSrc=null,snapshot=null,recAllRunning=false
 
   const setInfo=(t)=>els.info.textContent=t
   const setButton=(t)=>els.toggle.textContent=t
@@ -31,7 +32,11 @@ export function initApp(){
     play:(ch,f0,f1,winSec)=>previewSelection(ch,f0,f1,winSec),
     save:(ch,f0,f1,winSec)=>saveSelection(ch,f0,f1,winSec),
   })
-  Spectro.bindRecordToggles((ch,on)=>{ if(on){ Rec.resetChannelBuffer(ch) } Rec.setChannelRecording(ch,on) })
+  Spectro.bindRecordToggles((ch,on)=>{ /* legacy no-op */ })
+  Spectro.bindRecordControls({
+    onArm:(ch,armed)=>{/* nothing to do until global start */},
+    onToggle:(ch,running)=>{ if(recAllRunning){ Rec.setChannelRecording(ch, running) } }
+  })
 
   function stopPreview(){try{previewSrc?.stop()}catch{};try{previewCtx?.close()}catch{};previewSrc=null;previewCtx=null}
 
@@ -100,7 +105,7 @@ export function initApp(){
     setMode('playing');setButton('Pause');setInfo('Buffering + visuals resumed');Spectro.exitInspectMode();snapshot=null
   }
 
-  function stopAll(){
+  function stopAll(){ recAllRunning=false; if(els.recAll) els.recAll.textContent='Start All REC'; Spectro.setGlobalRecRunning(false);
     Spectro.stop();stopPreview();if(audioCtx){try{audioCtx.close()}catch{};audioCtx=null}
     if(stream){try{stream.getTracks().forEach(t=>t.stop())}catch{};stream=null}
   }
@@ -111,6 +116,23 @@ export function initApp(){
     else await resume()
   })
   els.save.addEventListener('click',()=>{Rec.saveAllBuffered(audioCtx?.sampleRate||48000);setInfo('Saved last buffer for all channels.')})
+
+  els.recAll.addEventListener('click',()=>{
+    if(!recAllRunning){
+      const arms = Spectro.getArmStates()
+      Rec.startAllRecording(arms)
+      recAllRunning = true
+      Spectro.setGlobalRecRunning(true)
+      els.recAll.textContent = 'Stop All REC'
+      setInfo('Recording started for armed channels.')
+    } else {
+      Rec.stopAllRecording()
+      recAllRunning = false
+      Spectro.setGlobalRecRunning(false)
+      els.recAll.textContent = 'Start All REC'
+      setInfo('Recording stopped.')
+    }
+  })
   els.deviceSelect.addEventListener('change',async()=>{if(state.mode==='stopped')return;pause();stopAll();await play()})
   els.channels.addEventListener('change',async()=>{if(state.mode==='playing'){pause();stopAll();await play()}else{Spectro.setupGrid('#spectrograms',Math.min(4,parseInt(els.channels.value,10)||2))}})
   els.fft.addEventListener('change',()=>{if(state.mode==='playing'){analyzers.forEach(an=>{an.fftSize=parseInt(els.fft.value,10)||1024});Spectro.start(analyzers)}})
